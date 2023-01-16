@@ -9,3 +9,4 @@ raw-cpuid = { version = "10.6", default-features = false }
 uefi = { version = "0.18", default-features = false }
 goblin = { version = "0.6", features = ["elf32", "elf64", "endian_fd"], default-features = false }
 log = { version = "0.4", default-features = false }
+spin = { version = "0.9", default-features = false, features = ["lock_api", "spin_mutex", "rwlock", "once", "lazy", "barrier"] }

@@ -9,3 +9,4 @@ uefi.workspace = true
 log.workspace = true
 raw-cpuid.workspace = true
 goblin.workspace = true
+spin.workspace = true

@@ -18,6 +18,7 @@ use uefi::proto::media::file::FileAttribute;
 use uefi::proto::media::file::FileMode;
 use uefi::proto::media::fs::SimpleFileSystem;
 use uefi::CStr16;
+use uefi::Handle;
 
 struct SerialLogger {}
 
@@ -49,7 +50,7 @@ impl log::Log for StdOutLogger {
 
 enum LogDevice {
     StdOut,
-    Serial,
+    _Serial,
 }
 
 struct LoaderConfig {
@@ -103,9 +104,9 @@ fn get_config(boot_services: &BootServices) -> LoaderConfig {
 fn setup_logger(boot_services: &BootServices, config: LoaderConfig) {
     match config.log_device {
         LogDevice::StdOut => {}
-        LogDevice::Serial => {
+        LogDevice::_Serial => {
             if let Ok(serial_proto_handle) = boot_services.get_handle_for_protocol::<Serial>() {
-                if let Ok(mut serial_proto) =
+                if let Ok(_serial_proto) =
                     boot_services.open_protocol_exclusive::<Serial>(serial_proto_handle)
                 {
                     // serial_proto.reset();
@@ -119,11 +120,10 @@ fn setup_logger(boot_services: &BootServices, config: LoaderConfig) {
 }
 
 #[no_mangle]
-pub extern "efiapi" fn efi_main(
-    image_handle: uefi::Handle,
-    mut system_table: SystemTable<Boot>,
-) -> ! {
-    system_table.stdout().clear().unwrap();
+pub extern "efiapi" fn efi_main(image_handle: Handle, boot_system_table: SystemTable<Boot>) -> ! {
+    let mut boot_system_table_unsafe_clone = unsafe { boot_system_table.unsafe_clone() };
+    let stdout = boot_system_table_unsafe_clone.stdout();
+    stdout.clear().unwrap();
 
     let cpuid = CpuId::new();
     let cpu_vendor = cpuid
@@ -132,7 +132,7 @@ pub extern "efiapi" fn efi_main(
     let brand_str = cpuid.get_processor_brand_string();
 
     writeln!(
-        system_table.stdout(),
+        stdout,
         "Loading **CorgOS** on {} {}",
         cpu_vendor.as_str(),
         if let Some(b) = &brand_str {
@@ -143,13 +143,24 @@ pub extern "efiapi" fn efi_main(
     )
     .unwrap();
 
-    let boot_services = system_table.boot_services();
-    let config = get_config(boot_services);
+    let fw_vendor = boot_system_table.firmware_vendor();
+    let fw_revision = boot_system_table.firmware_revision();
+    let uefi_revision = boot_system_table.uefi_revision();
+    writeln!(
+        stdout,
+        "Firmware {fw_vendor} {:x}.{:x}, UEFI revision {uefi_revision}",
+        fw_revision >> 16,
+        fw_revision as u16
+    )
+    .unwrap();
 
+    let boot_services = boot_system_table.boot_services();
+    let config = get_config(boot_services);
     setup_logger(boot_services, config);
 
-    let _ebs = system_table
-        .exit_boot_services(image_handle, &mut [])
+    let mut mmap_buf = [0_u8; 4096];
+    let (_runtime_system_table, _memory_map) = boot_system_table
+        .exit_boot_services(image_handle, &mut mmap_buf)
         .unwrap();
 
     panic!();
