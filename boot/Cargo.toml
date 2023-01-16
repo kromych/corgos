@@ -1,0 +1,11 @@
+[package]
+name = "corgos-boot"
+version = "0.1.0"
+authors = ["kromych"]
+edition = "2021"
+
+[dependencies]
+uefi.workspace = true
+log.workspace = true
+raw-cpuid.workspace = true
+goblin.workspace = true

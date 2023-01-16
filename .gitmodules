@@ -1,0 +1,3 @@
+[submodule "edk2-uefi"]
+	path = edk2-uefi
+	url = https://github.com/kromych/edk2-uefi

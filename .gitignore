@@ -1,0 +1,12 @@
+.vscode
+.idea
+/target
+/esp
+/ovmf
+.DS_Store
+*.log
+*.img
+*.bin
+*.qcow2
+*.vmdk
+*.vhdx
