@@ -165,6 +165,10 @@ pub extern "efiapi" fn efi_main(image_handle: Handle, boot_system_table: SystemT
     )
     .unwrap();
 
+    if let Some(hv_info) = cpuid.get_hypervisor_info() {
+        writeln!(stdout, "Hypervisor detected: {:?}", hv_info.identify()).unwrap();
+    }
+
     let fw_vendor = boot_system_table.firmware_vendor();
     let fw_revision = boot_system_table.firmware_revision();
     let uefi_revision = boot_system_table.uefi_revision();
