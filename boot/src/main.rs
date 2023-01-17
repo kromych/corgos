@@ -50,7 +50,7 @@ impl log::Log for StdOutLogger {
 
 enum LogDevice {
     StdOut,
-    _Serial,
+    Serial,
 }
 
 struct LoaderConfig {
@@ -67,11 +67,35 @@ const CORGOS_INI: &CStr16 = cstr16!("corgos-boot.ini");
 /// The interrupts are disabled and the processor is halted.
 const CORGOS_BARF: u64 = u64::from_le_bytes([0x46, 0x52, 0x41, 0x42, 0x47, 0x52, 0x4f, 0x43]);
 
-fn parse_config(_bytes: &[u8]) -> Option<LoaderConfig> {
-    Some(LoaderConfig {
+fn parse_config(bytes: &[u8]) -> Option<LoaderConfig> {
+    let mut config = LoaderConfig {
         log_device: LogDevice::StdOut,
         log_level: LevelFilter::Info,
-    })
+    };
+    let mut parser = corg_ini::Parser::new(bytes);
+
+    while let Ok(Some(clause)) = parser.parse() {
+        if let corg_ini::Clause::KeyValue(key_slice, value_slice) = clause {
+            match key_slice {
+                b"log_device" => match value_slice {
+                    b"serial" => config.log_device = LogDevice::Serial,
+                    b"stdout" => config.log_device = LogDevice::StdOut,
+                    _ => continue,
+                },
+                b"log_level" => match value_slice {
+                    b"info" => config.log_level = LevelFilter::Info,
+                    b"warn" => config.log_level = LevelFilter::Warn,
+                    b"error" => config.log_level = LevelFilter::Error,
+                    b"debug" => config.log_level = LevelFilter::Debug,
+                    b"trace" => config.log_level = LevelFilter::Trace,
+                    _ => continue,
+                },
+                _ => continue,
+            }
+        }
+    }
+
+    Some(config)
 }
 
 fn get_config(boot_services: &BootServices) -> LoaderConfig {
@@ -104,7 +128,7 @@ fn get_config(boot_services: &BootServices) -> LoaderConfig {
 fn setup_logger(boot_services: &BootServices, config: LoaderConfig) {
     match config.log_device {
         LogDevice::StdOut => {}
-        LogDevice::_Serial => {
+        LogDevice::Serial => {
             if let Ok(serial_proto_handle) = boot_services.get_handle_for_protocol::<Serial>() {
                 if let Ok(_serial_proto) =
                     boot_services.open_protocol_exclusive::<Serial>(serial_proto_handle)

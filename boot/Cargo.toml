@@ -8,5 +8,6 @@ edition = "2021"
 uefi.workspace = true
 log.workspace = true
 raw-cpuid.workspace = true
-goblin.workspace = true
+elf.workspace = true
 spin.workspace = true
+corg-ini.workspace = true
