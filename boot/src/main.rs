@@ -74,24 +74,22 @@ fn parse_config(bytes: &[u8]) -> Option<LoaderConfig> {
     };
     let mut parser = corg_ini::Parser::new(bytes);
 
-    while let Ok(Some(clause)) = parser.parse() {
-        if let corg_ini::Clause::KeyValue(key_slice, value_slice) = clause {
-            match key_slice {
-                b"log_device" => match value_slice {
-                    b"serial" => config.log_device = LogDevice::Serial,
-                    b"stdout" => config.log_device = LogDevice::StdOut,
-                    _ => continue,
-                },
-                b"log_level" => match value_slice {
-                    b"info" => config.log_level = LevelFilter::Info,
-                    b"warn" => config.log_level = LevelFilter::Warn,
-                    b"error" => config.log_level = LevelFilter::Error,
-                    b"debug" => config.log_level = LevelFilter::Debug,
-                    b"trace" => config.log_level = LevelFilter::Trace,
-                    _ => continue,
-                },
+    while let Ok(Some(corg_ini::KeyValue { key, value })) = parser.parse() {
+        match key {
+            b"log_device" => match value {
+                b"serial" => config.log_device = LogDevice::Serial,
+                b"stdout" => config.log_device = LogDevice::StdOut,
                 _ => continue,
-            }
+            },
+            b"log_level" => match value {
+                b"info" => config.log_level = LevelFilter::Info,
+                b"warn" => config.log_level = LevelFilter::Warn,
+                b"error" => config.log_level = LevelFilter::Error,
+                b"debug" => config.log_level = LevelFilter::Debug,
+                b"trace" => config.log_level = LevelFilter::Trace,
+                _ => continue,
+            },
+            _ => continue,
         }
     }
 
