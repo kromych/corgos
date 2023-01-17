@@ -9,5 +9,5 @@ uefi.workspace = true
 log.workspace = true
 raw-cpuid.workspace = true
 elf.workspace = true
-spin.workspace = true
+spinning_top.workspace = true
 corg-ini.workspace = true
