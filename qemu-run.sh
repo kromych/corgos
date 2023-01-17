@@ -28,7 +28,7 @@ qemu-system-x86_64 \
     -nodefaults \
     -machine q35 -smp $(nproc) \
     -nographic \
-    -m 8G \
+    -m 64M \
     -drive if=pflash,format=raw,file=$OVMF_DIR/OVMF_CODE.fd,readonly=on \
     -drive if=pflash,format=raw,file=$OVMF_DIR/OVMF_VARS.fd,readonly=on \
     -drive format=raw,file=fat:rw:$EFI_DIR \
