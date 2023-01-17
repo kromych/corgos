@@ -27,13 +27,13 @@ echo "log_level = debug" >> $EFI_DIR/efi/boot/corgos-boot.ini
 qemu-system-x86_64 \
     -nodefaults \
     -machine q35 -smp $(nproc) \
-    -nographic \
     -m 64M \
     -drive if=pflash,format=raw,file=$OVMF_DIR/OVMF_CODE.fd,readonly=on \
     -drive if=pflash,format=raw,file=$OVMF_DIR/OVMF_VARS.fd,readonly=on \
     -drive format=raw,file=fat:rw:$EFI_DIR \
-    -nographic \
     -chardev stdio,id=char0,mux=on,logfile=serial.log,signal=off \
     -serial chardev:char0 \
     -mon chardev=char0 \
+    -nographic \
+#    -vga std \
 #    -d guest_errors -d cpu_reset -d int -D qemu.log -no-reboot -no-shutdown
