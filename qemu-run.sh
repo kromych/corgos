@@ -12,7 +12,7 @@
 
 OVMF_CODE=$(PWD)/edk2-uefi/ovmf-x64-4m/OVMF_CODE.fd
 OVMF_VARS=$(PWD)/edk2-uefi/ovmf-x64-4m/OVMF_VARS.fd
-BUILD_DIR=$(PWD)/target/x86_64-unknown-uefi/debug
+BUILD_DIR=$(PWD)/target/x86_64-unknown-uefi/release
 EFI_DIR=$(PWD)/esp
 OVMF_DIR=$(PWD)/ovmf
 
