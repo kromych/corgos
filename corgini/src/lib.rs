@@ -7,7 +7,7 @@
 //! Well-formed input consists of lines each of which carries a key-value pair
 //! delimited with '=':
 //! ```ignore
-//! brick_count = infinity
+//! brick_c.o.u.n.t-0 = "infinite infinity"
 //! brick_density = 1000e10
 //!```
 //!
@@ -41,114 +41,135 @@
 
 #![cfg_attr(not(test), no_std)]
 
-// Marker trait for ASCII and UTF-8 characters.
-pub trait Char {}
-impl Char for u8 {}
-impl Char for char {}
+pub trait InputSlice {}
+impl InputSlice for &[u8] {}
+impl InputSlice for &str {}
 
-pub trait CharKind<C: Char> {
-    fn is_whitespace(&self) -> bool;
-    fn is_alpha(&self) -> bool;
-    fn is_digit(&self) -> bool;
-    fn is_underscore(&self) -> bool;
-    fn is_minus(&self) -> bool;
-    fn is_plus(&self) -> bool;
-    fn is_assign(&self) -> bool;
-    fn is_hash(&self) -> bool;
-    fn is_null(&self) -> bool;
-    fn is_newline(&self) -> bool;
-    fn is_quote(&self) -> bool;
+pub trait Input<S>
+where
+    S: InputSlice + Copy,
+{
+    fn count(self) -> usize;
+    fn slice(self, start: usize, end: usize) -> S;
+    fn whitespace(self, index: usize) -> bool;
+    fn alpha(self, index: usize) -> bool;
+    fn digit(self, index: usize) -> bool;
+    fn underscore(self, index: usize) -> bool;
+    fn dot(self, index: usize) -> bool;
+    fn hyphen(self, index: usize) -> bool;
+    fn assign(self, index: usize) -> bool;
+    fn hash(self, index: usize) -> bool;
+    fn null(self, index: usize) -> bool;
+    fn newline(self, index: usize) -> bool;
+    fn quote(self, index: usize) -> bool;
 }
 
-impl CharKind<u8> for u8 {
-    fn is_whitespace(&self) -> bool {
-        (b'\t'..=b' ').contains(self)
+impl<'a> Input<&'a [u8]> for &'a [u8] {
+    fn count(self) -> usize {
+        self.len()
     }
 
-    fn is_alpha(&self) -> bool {
-        self.is_ascii_alphabetic()
+    fn slice(self, start: usize, end: usize) -> &'a [u8] {
+        &self[start..end]
     }
 
-    fn is_digit(&self) -> bool {
-        self.is_ascii_digit()
+    fn whitespace(self, index: usize) -> bool {
+        (b'\t'..=b' ').contains(&self[index])
     }
 
-    fn is_underscore(&self) -> bool {
-        *self == b'_'
+    fn alpha(self, index: usize) -> bool {
+        self[index].is_ascii_alphabetic()
     }
 
-    fn is_plus(&self) -> bool {
-        *self == b'-'
+    fn digit(self, index: usize) -> bool {
+        self[index].is_ascii_digit()
     }
 
-    fn is_minus(&self) -> bool {
-        *self == b'='
+    fn underscore(self, index: usize) -> bool {
+        self[index] == b'_'
     }
 
-    fn is_assign(&self) -> bool {
-        *self == b'='
+    fn dot(self, index: usize) -> bool {
+        self[index] == b'.'
     }
 
-    fn is_hash(&self) -> bool {
-        *self == b'#'
+    fn hyphen(self, index: usize) -> bool {
+        self[index] == b'-'
     }
 
-    fn is_null(&self) -> bool {
-        *self == 0
+    fn assign(self, index: usize) -> bool {
+        self[index] == b'='
     }
 
-    fn is_newline(&self) -> bool {
-        *self == b'\n'
+    fn hash(self, index: usize) -> bool {
+        self[index] == b'#'
     }
 
-    fn is_quote(&self) -> bool {
-        *self == b'"'
+    fn null(self, index: usize) -> bool {
+        self[index] == 0
+    }
+
+    fn newline(self, index: usize) -> bool {
+        self[index] == b'\n'
+    }
+
+    fn quote(self, index: usize) -> bool {
+        self[index] == b'"'
     }
 }
 
-impl CharKind<char> for char {
-    fn is_whitespace(&self) -> bool {
-        ('\t'..=' ').contains(self)
+// TODO: slow and broken for non-ASCII
+impl<'a> Input<&'a str> for &'a str {
+    fn count(self) -> usize {
+        self.chars().count()
     }
 
-    fn is_alpha(&self) -> bool {
-        self.is_alphabetic()
+    fn slice(self, start: usize, end: usize) -> &'a str {
+        &self[start..end]
     }
 
-    fn is_digit(&self) -> bool {
-        self.is_numeric()
+    fn whitespace(self, index: usize) -> bool {
+        ('\t'..=' ').contains(&self.chars().nth(index).unwrap())
     }
 
-    fn is_underscore(&self) -> bool {
-        *self == '_'
+    fn alpha(self, index: usize) -> bool {
+        self.chars().nth(index).unwrap().is_alphabetic()
     }
 
-    fn is_minus(&self) -> bool {
-        *self == '-'
+    fn digit(self, index: usize) -> bool {
+        self.chars().nth(index).unwrap().is_numeric()
     }
 
-    fn is_plus(&self) -> bool {
-        *self == '+'
+    fn underscore(self, index: usize) -> bool {
+        self.chars().nth(index).unwrap() == '_'
     }
 
-    fn is_assign(&self) -> bool {
-        *self == '='
+    fn dot(self, index: usize) -> bool {
+        self.chars().nth(index).unwrap() == '.'
     }
 
-    fn is_hash(&self) -> bool {
-        *self == '#'
+    fn hyphen(self, index: usize) -> bool {
+        self.chars().nth(index).unwrap() == '-'
     }
 
-    fn is_null(&self) -> bool {
-        *self == '\x00'
+    fn assign(self, index: usize) -> bool {
+        self.chars().nth(index).unwrap() == '='
     }
 
-    fn is_newline(&self) -> bool {
-        *self == '\n'
+    fn hash(self, index: usize) -> bool {
+        self.chars().nth(index).unwrap() == '#'
     }
 
-    fn is_quote(&self) -> bool {
-        *self == '"'
+    fn null(self, index: usize) -> bool {
+        self.chars().nth(index).unwrap() == '\x00'
+    }
+
+    fn newline(self, index: usize) -> bool {
+        self.chars().nth(index).unwrap() == '\n'
+    }
+
+    fn quote(self, index: usize) -> bool {
+        self.chars().nth(index).unwrap() == '"'
     }
 }
 
@@ -188,89 +209,113 @@ pub enum Error {
     ExpectedValue(Location),
     ExpectedAssign(Location),
     UnexpectedToken(Location),
+    UnmatchedQuote(Location),
+    InvalidKeyName(Location),
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-enum Token<'a, C>
-where
-    C: Char,
-{
+enum Token {
     Unknown(Error),
-    Assign,
-    Literal(&'a [C]),
-    EndOfInput,
+    Assign(Location),
+    Literal(Location, Location),
+    Quoted(Location, Location),
+    EndOfInput(Location),
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct KeyValue<'a, C>
+pub struct KeyValue<S>
 where
-    C: Char,
+    S: InputSlice,
 {
-    pub key: &'a [C],
-    pub value: &'a [C],
+    pub key: S,
+    pub value: S,
 }
 
-pub struct Parser<'a, C>
+pub struct Parser<I>
 where
-    C: Char,
+    I: Copy + InputSlice + Input<I>,
 {
     location: Location,
-    input: &'a [C],
+    input: I,
+    input_len: usize,
 }
 
-impl<'a, C> Parser<'a, C>
+impl<I> Parser<I>
 where
-    C: Char + CharKind<C> + Copy,
+    I: Copy + InputSlice + Input<I>,
 {
-    pub fn new(input: &'a [C]) -> Self {
+    pub fn new(input: I) -> Self {
         Self {
             location: Location::default(),
             input,
+            input_len: input.count(),
         }
     }
 
-    fn parse_token(&mut self) -> Token<'a, C> {
-        if self.location.pos >= self.input.len() {
-            return Token::EndOfInput;
+    #[inline]
+    fn parse_token(&mut self) -> Token {
+        let mut tok = Token::EndOfInput(self.location);
+        if self.location.pos >= self.input_len {
+            return tok;
         }
 
         let mut loc = self.location;
-        let mut tok = Token::EndOfInput;
+        let key_value_valid_input = |index| {
+            self.input.alpha(index)
+                || self.input.digit(index)
+                || self.input.underscore(index)
+                || self.input.dot(index)
+                || self.input.hyphen(index)
+        };
 
-        'outer: while loc.pos < self.input.len() {
-            let b = self.input[loc.pos];
-            if b.is_null() {
-                tok = Token::EndOfInput;
+        'outer: while loc.pos < self.input_len {
+            if self.input.null(loc.pos) {
                 break;
-            } else if b.is_newline() {
+            } else if self.input.newline(loc.pos) {
                 loc.new_line();
-            } else if b.is_whitespace() {
+            } else if self.input.whitespace(loc.pos) {
                 loc.advance();
-            } else if b.is_assign() {
+            } else if self.input.assign(loc.pos) {
                 loc.advance();
-                tok = Token::Assign;
+                tok = Token::Assign(self.location);
                 break;
-            } else if b.is_hash() {
+            } else if self.input.hash(loc.pos) {
                 loc.advance();
-                while loc.pos < self.input.len() {
-                    if self.input[loc.pos].is_newline() {
+                while loc.pos < self.input_len {
+                    if self.input.newline(loc.pos) {
                         continue 'outer;
                     }
                     loc.advance();
                 }
-            } else if b.is_alpha() || b.is_digit() {
+            } else if self.input.quote(loc.pos) {
+                tok = Token::Unknown(Error::UnmatchedQuote(self.location));
+                loc.advance();
+
+                let start_loc = loc;
+                while loc.pos < self.input_len {
+                    // TODO: escaped quotes
+                    if self.input.quote(loc.pos) {
+                        tok = Token::Quoted(start_loc, loc);
+                        loc.advance();
+                        break 'outer;
+                    }
+                    if self.input.newline(loc.pos) {
+                        break;
+                    }
+                    loc.advance();
+                }
+            } else if key_value_valid_input(loc.pos) {
                 let start_loc = loc;
 
                 loc.advance();
-                while loc.pos < self.input.len() {
-                    let b = self.input[loc.pos];
-                    if b.is_alpha() || b.is_digit() {
+                while loc.pos < self.input_len {
+                    if key_value_valid_input(loc.pos) {
                         loc.advance();
                     } else {
                         break;
                     }
                 }
-                tok = Token::Literal(&self.input[start_loc.pos..loc.pos]);
+                tok = Token::Literal(start_loc, loc);
                 break;
             } else {
                 tok = Token::Unknown(Error::UnexpectedToken(self.location));
@@ -282,17 +327,29 @@ where
         tok
     }
 
-    pub fn parse(&mut self) -> Result<Option<KeyValue<'a, C>>, Error> {
+    pub fn parse(&mut self) -> Result<Option<KeyValue<I>>, Error> {
         match self.parse_token() {
-            Token::EndOfInput => Ok(None),
-            Token::Literal(key) => {
+            Token::EndOfInput(_) => Ok(None),
+            Token::Literal(start_key, end_key) => {
+                if !self.input.alpha(start_key.pos) {
+                    return Err(Error::InvalidKeyName(start_key));
+                }
+
                 let token = self.parse_token();
-                if !matches!(token, Token::Assign) {
+                if !matches!(token, Token::Assign(_)) {
                     return Err(Error::ExpectedAssign(self.location));
                 }
+
                 let token = self.parse_token();
                 match token {
-                    Token::Literal(value) => Ok(Some(KeyValue { key, value })),
+                    Token::Literal(start_value, end_value) => Ok(Some(KeyValue {
+                        key: self.input.slice(start_key.pos, end_key.pos),
+                        value: self.input.slice(start_value.pos, end_value.pos),
+                    })),
+                    Token::Quoted(start_value, end_value) => Ok(Some(KeyValue {
+                        key: self.input.slice(start_key.pos, end_key.pos),
+                        value: self.input.slice(start_value.pos, end_value.pos),
+                    })),
                     _ => Err(Error::UnexpectedToken(self.location)),
                 }
             }
@@ -303,88 +360,136 @@ where
 
 #[cfg(test)]
 mod tests {
-    #![cfg(test)]
-
     use crate::KeyValue;
     use crate::Parser;
 
     #[test]
     fn parse_key_value_ascii() {
-        let input = b"foo = bar";
+        let input = b"br-ick_c.o.u.n.t0 = \"infinite infinity\"".as_slice();
         let mut parser = Parser::new(input);
         let foo_bar = parser.parse();
         assert_eq!(
             foo_bar,
             Ok(Some(KeyValue {
-                key: b"foo",
-                value: b"bar"
+                key: b"br-ick_c.o.u.n.t0".as_slice(),
+                value: b"infinite infinity".as_slice()
             }))
         );
 
         let eoi = parser.parse();
         assert_eq!(eoi, Ok(None))
     }
-    /*
-        fn parse_key_value() {
-            let input = "foo = bar";
-            let mut parser = Parser::new(input);
-            let foo_bar = parser.parse();
-            assert_eq!(
-                foo_bar,
-                Ok(Some(KeyValue {
-                    key: "foo",
-                    value: "bar"
-                }))
-            );
-
-            let eoi = parser.parse();
-            assert_eq!(eoi, Ok(None))
-        }
-    */
 
     #[test]
-    fn parse_key_values_ascii() {
-        let input =
-            b"foo0 = bar0\nfoo1 = bar1\nfoo2 = bar2\nfoo3 = bar3#.....\n#.........\nfoo4 = bar4\n\n";
+    fn parse_key_value() {
+        let input = "br-ick_c.o.u.n.t0 = \"infinite infinity\"";
         let mut parser = Parser::new(input);
         let foo_bar = parser.parse();
         assert_eq!(
             foo_bar,
             Ok(Some(KeyValue {
-                key: b"foo0",
-                value: b"bar0"
+                key: "br-ick_c.o.u.n.t0",
+                value: "infinite infinity"
+            }))
+        );
+
+        let eoi = parser.parse();
+        assert_eq!(eoi, Ok(None))
+    }
+
+    #[test]
+    fn parse_key_values_ascii() {
+        let input =
+            b"foo0 = bar0\nfoo1 = bar1\nfoo2 = bar2\nfoo3 = \"bar3 bar3\"#.....\n#.........\nfoo4 = bar4\n\n".as_slice();
+        let mut parser = Parser::new(input);
+        let foo_bar = parser.parse();
+        assert_eq!(
+            foo_bar,
+            Ok(Some(KeyValue {
+                key: b"foo0".as_slice(),
+                value: b"bar0".as_slice()
             }))
         );
         let foo_bar = parser.parse();
         assert_eq!(
             foo_bar,
             Ok(Some(KeyValue {
-                key: b"foo1",
-                value: b"bar1"
+                key: b"foo1".as_slice(),
+                value: b"bar1".as_slice()
             }))
         );
         let foo_bar = parser.parse();
         assert_eq!(
             foo_bar,
             Ok(Some(KeyValue {
-                key: b"foo2",
-                value: b"bar2"
+                key: b"foo2".as_slice(),
+                value: b"bar2".as_slice()
             }))
         );
         let foo_bar = parser.parse();
         assert_eq!(
             foo_bar,
             Ok(Some(KeyValue {
-                key: b"foo3",
-                value: b"bar3"
+                key: b"foo3".as_slice(),
+                value: b"bar3 bar3".as_slice()
             }))
         );
         let foo_bar = parser.parse();
         assert_eq!(
             foo_bar,
             Ok(Some(KeyValue {
-                key: b"foo4",
-                value: b"bar4"
+                key: b"foo4".as_slice(),
+                value: b"bar4".as_slice()
+            }))
+        );
+
+        let eoi = parser.parse();
+        assert_eq!(eoi, Ok(None))
+    }
+
+    #[test]
+    fn parse_key_values() {
+        let input =
+            "foo0 = bar0\nfoo1 = bar1\nfoo2 = bar2\nfoo3 = \"bar3 bar3\"#.....\n#..COMMENT.COMMENT......\nfoo4 = bar4\n\n";
+        let mut parser = Parser::new(input);
+        let foo_bar = parser.parse();
+        assert_eq!(
+            foo_bar,
+            Ok(Some(KeyValue {
+                key: "foo0",
+                value: "bar0"
+            }))
+        );
+        let foo_bar = parser.parse();
+        assert_eq!(
+            foo_bar,
+            Ok(Some(KeyValue {
+                key: "foo1",
+                value: "bar1"
+            }))
+        );
+        let foo_bar = parser.parse();
+        assert_eq!(
+            foo_bar,
+            Ok(Some(KeyValue {
+                key: "foo2",
+                value: "bar2"
+            }))
+        );
+        let foo_bar = parser.parse();
+        assert_eq!(
+            foo_bar,
+            Ok(Some(KeyValue {
+                key: "foo3",
+                value: "bar3 bar3"
+            }))
+        );
+        let foo_bar = parser.parse();
+        assert_eq!(
+            foo_bar,
+            Ok(Some(KeyValue {
+                key: "foo4",
+                value: "bar4"
             }))
         );
 
