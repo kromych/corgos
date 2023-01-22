@@ -15,13 +15,15 @@ OVMF_VARS=$(PWD)/edk2-uefi/ovmf-x64-4m/OVMF_VARS.fd
 BUILD_DIR=$(PWD)/target/x86_64-unknown-uefi/release
 EFI_DIR=$(PWD)/esp
 OVMF_DIR=$(PWD)/ovmf
+REVISION=`git log -1 --oneline`
 
 mkdir -p $EFI_DIR/efi/boot
 mkdir -p $OVMF_DIR
 cp $OVMF_CODE $OVMF_DIR
 cp $OVMF_VARS $OVMF_DIR
 cp $BUILD_DIR/corgos-boot.efi $EFI_DIR/efi/boot/bootx64.efi
-echo "log_device = stdout" > $EFI_DIR/efi/boot/corgos-boot.ini
+echo "revision = \"$REVISION\"" > $EFI_DIR/efi/boot/corgos-boot.ini
+echo "log_device = stdout" >> $EFI_DIR/efi/boot/corgos-boot.ini
 echo "log_level = debug" >> $EFI_DIR/efi/boot/corgos-boot.ini
 
 qemu-system-x86_64 \
