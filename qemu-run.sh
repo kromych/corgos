@@ -28,7 +28,7 @@ echo "log_device = stdout" >> $EFI_DIR/efi/boot/corgos-boot.ini
 echo "log_level = debug" >> $EFI_DIR/efi/boot/corgos-boot.ini
 
 qemu-system-x86_64 \
-    -nodefaults -s -S \
+    -nodefaults -s \
     -machine q35 -smp $NUM_PROC \
     -m 64M \
     -drive if=pflash,format=raw,file=$OVMF_DIR/OVMF_CODE.fd,readonly=on \

@@ -143,10 +143,10 @@ fn setup_logger(boot_services: &BootServices, config: LoaderConfig) {
 }
 
 #[no_mangle]
-extern "efiapi" fn uefi_entry(
-    image_handle: Handle,
-    boot_system_table: SystemTable<Boot>,
-) -> Status {
+extern "efiapi" fn uefi_main(image_handle: Handle, boot_system_table: SystemTable<Boot>) -> Status {
+    #[cfg(target_arch = "x86_64")]
+    wait_for_start();
+
     let mut boot_system_table_unsafe_clone = unsafe { boot_system_table.unsafe_clone() };
     let stdout = boot_system_table_unsafe_clone.stdout();
     stdout.clear().unwrap();
@@ -193,8 +193,21 @@ extern "efiapi" fn uefi_entry(
         .exit_boot_services(image_handle, &mut mmap_buf)
         .unwrap();
 
-    //panic!();
-    loop {}
+    panic!();
+}
+
+#[cfg(target_arch = "x86_64")]
+// Write 0 to R9 to break the loop.
+fn wait_for_start() {
+    unsafe {
+        asm!(
+            "1:     cmpq  %r9, 0",
+            "       pause",
+            "       jne 1b",
+            in("r9") 1,
+            options(att_syntax, nostack),
+        );
+    }
 }
 
 #[panic_handler]
