@@ -18,4 +18,26 @@ SECTIONS {
     .bss : {
         *(.bss .bss.*)
     }
+
+    .sdata : { 
+        *(.sdata .sdata.*)
+     }
+
+    .dynamic : { 
+        *(.dynamic .dynamic.*) }
+
+    .dynsym : { 
+        *(.dynsym .dynsym.*) }
+
+    .rel : { 
+        *(.rel .rel.*) }
+
+    .rela : { 
+        *(.rela .rela.*) }
+
+    .reloc : { 
+        *(.reloc .reloc.*) }
+
+    .eh_frame_hdr : { *(.eh_frame_hdr .eh_frame_hdr.*)}
+    .eh_frame : { *(.eh_frame .eh_frame.*)}
 }
