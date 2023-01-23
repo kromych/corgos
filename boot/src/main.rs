@@ -9,6 +9,7 @@ use core::panic::PanicInfo;
 use log::LevelFilter;
 use raw_cpuid::CpuId;
 use uefi::prelude::cstr16;
+use uefi::prelude::entry;
 use uefi::prelude::Boot;
 use uefi::prelude::BootServices;
 use uefi::prelude::SystemTable;
@@ -19,6 +20,7 @@ use uefi::proto::media::file::FileMode;
 use uefi::proto::media::fs::SimpleFileSystem;
 use uefi::CStr16;
 use uefi::Handle;
+use uefi::Status;
 
 struct SerialLogger {}
 
@@ -141,8 +143,8 @@ fn setup_logger(boot_services: &BootServices, config: LoaderConfig) {
     log::set_max_level(config.log_level);
 }
 
-#[no_mangle]
-pub extern "efiapi" fn efi_main(image_handle: Handle, boot_system_table: SystemTable<Boot>) -> ! {
+#[entry]
+pub fn uefi_entry(image_handle: Handle, boot_system_table: SystemTable<Boot>) -> Status {
     let mut boot_system_table_unsafe_clone = unsafe { boot_system_table.unsafe_clone() };
     let stdout = boot_system_table_unsafe_clone.stdout();
     stdout.clear().unwrap();
