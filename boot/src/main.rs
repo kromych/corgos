@@ -9,7 +9,6 @@ use core::panic::PanicInfo;
 use log::LevelFilter;
 use raw_cpuid::CpuId;
 use uefi::prelude::cstr16;
-use uefi::prelude::entry;
 use uefi::prelude::Boot;
 use uefi::prelude::BootServices;
 use uefi::prelude::SystemTable;
@@ -143,8 +142,11 @@ fn setup_logger(boot_services: &BootServices, config: LoaderConfig) {
     log::set_max_level(config.log_level);
 }
 
-#[entry]
-pub fn uefi_entry(image_handle: Handle, boot_system_table: SystemTable<Boot>) -> Status {
+#[no_mangle]
+extern "efiapi" fn uefi_entry(
+    image_handle: Handle,
+    boot_system_table: SystemTable<Boot>,
+) -> Status {
     let mut boot_system_table_unsafe_clone = unsafe { boot_system_table.unsafe_clone() };
     let stdout = boot_system_table_unsafe_clone.stdout();
     stdout.clear().unwrap();
@@ -191,10 +193,12 @@ pub fn uefi_entry(image_handle: Handle, boot_system_table: SystemTable<Boot>) ->
         .exit_boot_services(image_handle, &mut mmap_buf)
         .unwrap();
 
-    panic!();
+    //panic!();
+    loop {}
 }
 
 #[panic_handler]
+#[cfg(target_arch = "x86_64")]
 fn panic(panic: &PanicInfo<'_>) -> ! {
     let (file_name_addr, line_col) = if let Some(location) = panic.location() {
         (
@@ -218,3 +222,6 @@ fn panic(panic: &PanicInfo<'_>) -> ! {
         }
     }
 }
+
+#[no_mangle]
+extern "efiapi" fn __chkstk() {}
