@@ -8,42 +8,103 @@ use core::panic::PanicInfo;
 
 use log::LevelFilter;
 use raw_cpuid::CpuId;
+use spinning_top::Spinlock;
 use uefi::prelude::cstr16;
 use uefi::prelude::Boot;
 use uefi::prelude::BootServices;
 use uefi::prelude::SystemTable;
 use uefi::proto::console::serial::Serial;
+use uefi::proto::console::text::Output;
 use uefi::proto::media::file::File;
 use uefi::proto::media::file::FileAttribute;
 use uefi::proto::media::file::FileMode;
 use uefi::proto::media::fs::SimpleFileSystem;
+use uefi::table::boot::ScopedProtocol;
 use uefi::CStr16;
 use uefi::Handle;
 use uefi::Status;
 
-struct SerialLogger {}
+struct SyncSerialLogger<'a> {
+    boot_system_table: SystemTable<Boot>,
+    boot_services: &'a BootServices,
+    serial_proto: Spinlock<ScopedProtocol<'a, Serial<'a>>>,
+}
 
-impl log::Log for SerialLogger {
+impl<'a> SyncSerialLogger<'a> {
+    fn new(boot_system_table: &SystemTable<Boot>) -> Option<Self> {
+        let mut boot_system_table = unsafe { boot_system_table.unsafe_clone() };
+        let boot_services = boot_system_table.boot_services();
+        if let Ok(serial_proto_handle) = boot_services.get_handle_for_protocol::<Serial>() {
+            if let Ok(mut serial_proto) =
+                boot_services.open_protocol_exclusive::<Serial>(serial_proto_handle)
+            {
+                serial_proto.reset();
+                return Some(Self {
+                    boot_system_table,
+                    boot_services,
+                    serial_proto: Spinlock::new(serial_proto),
+                });
+            }
+        }
+        None
+    }
+}
+
+unsafe impl<'a> Send for SyncSerialLogger<'a> {}
+unsafe impl<'a> Sync for SyncSerialLogger<'a> {}
+
+impl<'a> log::Log for SyncSerialLogger<'a> {
     fn enabled(&self, _metadata: &log::Metadata) -> bool {
         true
     }
 
-    fn log(&self, _record: &log::Record) {
-        //writeln!(serial, "{:5}: {}", record.level(), record.args()).unwrap();
+    fn log(&self, record: &log::Record) {
+        let serial_proto = self.serial_proto.lock();
+        writeln!(
+            serial_proto,
+            "{:5}:{} {}",
+            record.level(),
+            record.target(),
+            record.args()
+        )
+        .unwrap();
     }
 
     fn flush(&self) {}
 }
 
-struct StdOutLogger {}
+struct SyncStdOut<'a> {
+    boot_system_table: SystemTable<Boot>,
+    boot_services: &'a BootServices,
+    stdout: Spinlock<Output<'a>>,
+}
 
-impl log::Log for StdOutLogger {
+impl<'a> SyncStdOut<'a> {
+    fn new(boot_system_table: &SystemTable<Boot>) -> Self {
+        let mut boot_system_table = unsafe { boot_system_table.unsafe_clone() };
+        let boot_services = boot_system_table.boot_services();
+        let stdout = boot_system_table.stdout();
+        stdout.clear().ok();
+
+        Self {
+            boot_system_table,
+            boot_services,
+            stdout: Spinlock::new(*stdout),
+        }
+    }
+}
+
+unsafe impl<'a> Send for SyncStdOut<'a> {}
+unsafe impl<'a> Sync for SyncStdOut<'a> {}
+
+impl<'a> log::Log for SyncStdOut<'a> {
     fn enabled(&self, _metadata: &log::Metadata) -> bool {
         true
     }
 
-    fn log(&self, _record: &log::Record) {
-        //writeln!(stdout, "{:5}: {}", record.level(), record.args()).unwrap();
+    fn log(&self, record: &log::Record) {
+        let stdout = self.stdout.lock();
+        writeln!(stdout, "{:5}: {}", record.level(), record.args()).unwrap();
     }
 
     fn flush(&self) {}
@@ -97,12 +158,14 @@ fn parse_config(bytes: &[u8]) -> Option<LoaderConfig> {
     Some(config)
 }
 
-fn get_config(boot_services: &BootServices) -> LoaderConfig {
+fn get_config(boot_system_table: &SystemTable<Boot>) -> LoaderConfig {
     let mut config = LoaderConfig {
         log_device: LogDevice::StdOut,
         log_level: LevelFilter::Info,
     };
 
+    let mut boot_system_table_unsafe_clone = unsafe { boot_system_table.unsafe_clone() };
+    let boot_services = boot_system_table_unsafe_clone.boot_services();
     if let Ok(fs_handle) = boot_services.get_handle_for_protocol::<SimpleFileSystem>() {
         if let Ok(mut fs) = boot_services.open_protocol_exclusive::<SimpleFileSystem>(fs_handle) {
             if let Ok(mut root_directory) = fs.open_volume() {
@@ -124,17 +187,14 @@ fn get_config(boot_services: &BootServices) -> LoaderConfig {
     config
 }
 
-fn setup_logger(boot_services: &BootServices, config: LoaderConfig) {
+fn setup_logger(boot_system_table: &SystemTable<Boot>, config: LoaderConfig) {
     match config.log_device {
-        LogDevice::StdOut => {}
+        LogDevice::StdOut => {
+            log::set_logger(&SyncStdOut::new(boot_system_table));
+        }
         LogDevice::Serial => {
-            if let Ok(serial_proto_handle) = boot_services.get_handle_for_protocol::<Serial>() {
-                if let Ok(_serial_proto) =
-                    boot_services.open_protocol_exclusive::<Serial>(serial_proto_handle)
-                {
-                    // serial_proto.reset();
-                    // log::set_logger(logger).expect("must be able to set the logger");
-                }
+            if let Some(serial) = SyncSerialLogger::new(boot_system_table) {
+                log::set_logger(&serial);
             }
         }
     }
@@ -144,12 +204,11 @@ fn setup_logger(boot_services: &BootServices, config: LoaderConfig) {
 
 #[no_mangle]
 extern "efiapi" fn uefi_main(image_handle: Handle, boot_system_table: SystemTable<Boot>) -> Status {
-    #[cfg(target_arch = "x86_64")]
-    wait_for_start();
+    //#[cfg(target_arch = "x86_64")]
+    //wait_for_start();
 
-    let mut boot_system_table_unsafe_clone = unsafe { boot_system_table.unsafe_clone() };
-    let stdout = boot_system_table_unsafe_clone.stdout();
-    stdout.clear().unwrap();
+    let config = get_config(&boot_system_table);
+    setup_logger(&boot_system_table, config);
 
     let cpuid = CpuId::new();
     let cpu_vendor = cpuid
@@ -157,8 +216,7 @@ extern "efiapi" fn uefi_main(image_handle: Handle, boot_system_table: SystemTabl
         .expect("Must be able to get CPU vendor");
     let brand_str = cpuid.get_processor_brand_string();
 
-    writeln!(
-        stdout,
+    log::info!(
         "Loading **CorgOS** on {} {}",
         cpu_vendor.as_str(),
         if let Some(b) = &brand_str {
@@ -166,27 +224,20 @@ extern "efiapi" fn uefi_main(image_handle: Handle, boot_system_table: SystemTabl
         } else {
             ""
         }
-    )
-    .unwrap();
+    );
 
     if let Some(hv_info) = cpuid.get_hypervisor_info() {
-        writeln!(stdout, "Hypervisor detected: {:?}", hv_info.identify()).unwrap();
+        log::info!("Hypervisor detected: {:?}", hv_info.identify());
     }
 
     let fw_vendor = boot_system_table.firmware_vendor();
     let fw_revision = boot_system_table.firmware_revision();
     let uefi_revision = boot_system_table.uefi_revision();
-    writeln!(
-        stdout,
+    log::info!(
         "Firmware {fw_vendor} {:x}.{:x}, UEFI revision {uefi_revision}",
         fw_revision >> 16,
         fw_revision as u16
-    )
-    .unwrap();
-
-    let boot_services = boot_system_table.boot_services();
-    let config = get_config(boot_services);
-    setup_logger(boot_services, config);
+    );
 
     let mut mmap_buf = [0_u8; 4096];
     let (_runtime_system_table, _memory_map) = boot_system_table
