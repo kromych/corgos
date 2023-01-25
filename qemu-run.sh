@@ -1,7 +1,5 @@
 #!/bin/sh
 
-#!/bin/bash
-
 #C-a h    print this help
 #C-a x    exit emulator
 #C-a s    save disk data back to file (if -snapshot)
@@ -18,8 +16,12 @@ OVMF_DIR=$(PWD)/ovmf
 NUM_PROC=8
 REVISION=`git log -1 --oneline`
 
+rm -rf $EFI_DIR
+rm -rf $OVMF_DIR
+
 mkdir -p $EFI_DIR/efi/boot
 mkdir -p $OVMF_DIR
+
 cp $OVMF_CODE $OVMF_DIR
 cp $OVMF_VARS $OVMF_DIR
 cp $BUILD_DIR/corgos-boot.efi $EFI_DIR/efi/boot/bootx64.efi

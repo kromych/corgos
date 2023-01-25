@@ -52,7 +52,7 @@ impl log::Log for SyncBootLogger {
         let stdout = unsafe { stdout.as_mut().unwrap() };
         writeln!(
             stdout,
-            "{:7} {}:{}@{} {}",
+            "{:7} {}:{}@{}  {}",
             record.level(),
             record.module_path().unwrap_or_default(),
             record.file().unwrap_or_default(),
@@ -112,18 +112,20 @@ impl log::Log for SyncBootLogger {
 //     fn flush(&self) {}
 // }
 
+#[derive(Debug, Clone)]
 enum LogDevice {
     StdOut,
     Serial,
 }
 
+#[derive(Debug, Clone)]
 struct LoaderConfig {
     log_device: LogDevice,
     log_level: LevelFilter,
 }
 
 /// The name of the configuration file in the ESP partition alongside the loader.
-const CORGOS_INI: &CStr16 = cstr16!("corgos-boot.ini");
+const CORGOS_INI: &CStr16 = cstr16!("efi\\boot\\corgos-boot.ini");
 
 /// Upon panic, b"CORGBARF" is loaded into R8. R9 contains the address of the file name,
 /// R10 contains the line number in the least significant 32 bits, and the column number
@@ -153,6 +155,9 @@ fn parse_config(bytes: &[u8]) -> Option<LoaderConfig> {
                 b"trace" => config.log_level = LevelFilter::Trace,
                 _ => continue,
             },
+            b"revision" => log::trace!("Revision '{}'", unsafe {
+                core::str::from_utf8_unchecked(value)
+            }),
             _ => continue,
         }
     }
@@ -162,8 +167,8 @@ fn parse_config(bytes: &[u8]) -> Option<LoaderConfig> {
 
 fn get_config(boot_system_table: &SystemTable<Boot>) -> LoaderConfig {
     let mut config = LoaderConfig {
-        log_device: LogDevice::StdOut,
-        log_level: LevelFilter::Trace,
+        log_device: LogDevice::Serial,
+        log_level: LevelFilter::Info,
     };
 
     let boot_system_table_unsafe_clone = unsafe { boot_system_table.unsafe_clone() };
@@ -186,6 +191,8 @@ fn get_config(boot_system_table: &SystemTable<Boot>) -> LoaderConfig {
         }
     }
 
+    log::trace!("{config:?}");
+
     config
 }
 
@@ -202,6 +209,12 @@ extern "efiapi" fn uefi_main(
     image_handle: Handle,
     mut boot_system_table: SystemTable<Boot>,
 ) -> Status {
+    unsafe {
+        boot_system_table
+            .boot_services()
+            .set_image_handle(image_handle);
+    }
+
     //#[cfg(target_arch = "x86_64")]
     //wait_for_start();
     setup_logger(&mut boot_system_table, LevelFilter::Trace);
