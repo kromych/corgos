@@ -31,6 +31,7 @@ qemu-system-x86_64 \
     -nodefaults -s \
     -machine q35 -smp $NUM_PROC \
     -m 64M \
+    -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
     -drive if=pflash,format=raw,file=$OVMF_DIR/OVMF_CODE.fd,readonly=on \
     -drive if=pflash,format=raw,file=$OVMF_DIR/OVMF_VARS.fd,readonly=on \
     -drive format=raw,file=fat:rw:$EFI_DIR \

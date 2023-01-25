@@ -6,109 +6,111 @@ use core::arch::asm;
 use core::fmt::Write;
 use core::panic::PanicInfo;
 
+use conquer_once::spin::OnceCell;
 use log::LevelFilter;
+use qemu_exit::QEMUExit;
 use raw_cpuid::CpuId;
 use spinning_top::Spinlock;
 use uefi::prelude::cstr16;
 use uefi::prelude::Boot;
-use uefi::prelude::BootServices;
 use uefi::prelude::SystemTable;
-use uefi::proto::console::serial::Serial;
 use uefi::proto::console::text::Output;
 use uefi::proto::media::file::File;
 use uefi::proto::media::file::FileAttribute;
 use uefi::proto::media::file::FileMode;
 use uefi::proto::media::fs::SimpleFileSystem;
-use uefi::table::boot::ScopedProtocol;
 use uefi::CStr16;
 use uefi::Handle;
 use uefi::Status;
 
-struct SyncSerialLogger<'a> {
-    boot_system_table: SystemTable<Boot>,
-    boot_services: &'a BootServices,
-    serial_proto: Spinlock<ScopedProtocol<'a, Serial<'a>>>,
+struct SyncBootLogger {
+    stdout: Spinlock<*mut Output<'static>>,
 }
 
-impl<'a> SyncSerialLogger<'a> {
-    fn new(boot_system_table: &SystemTable<Boot>) -> Option<Self> {
-        let mut boot_system_table = unsafe { boot_system_table.unsafe_clone() };
-        let boot_services = boot_system_table.boot_services();
-        if let Ok(serial_proto_handle) = boot_services.get_handle_for_protocol::<Serial>() {
-            if let Ok(mut serial_proto) =
-                boot_services.open_protocol_exclusive::<Serial>(serial_proto_handle)
-            {
-                serial_proto.reset();
-                return Some(Self {
-                    boot_system_table,
-                    boot_services,
-                    serial_proto: Spinlock::new(serial_proto),
-                });
-            }
-        }
-        None
-    }
-}
-
-unsafe impl<'a> Send for SyncSerialLogger<'a> {}
-unsafe impl<'a> Sync for SyncSerialLogger<'a> {}
-
-impl<'a> log::Log for SyncSerialLogger<'a> {
-    fn enabled(&self, _metadata: &log::Metadata) -> bool {
-        true
-    }
-
-    fn log(&self, record: &log::Record) {
-        let serial_proto = self.serial_proto.lock();
-        writeln!(
-            serial_proto,
-            "{:5}:{} {}",
-            record.level(),
-            record.target(),
-            record.args()
-        )
-        .unwrap();
-    }
-
-    fn flush(&self) {}
-}
-
-struct SyncStdOut<'a> {
-    boot_system_table: SystemTable<Boot>,
-    boot_services: &'a BootServices,
-    stdout: Spinlock<Output<'a>>,
-}
-
-impl<'a> SyncStdOut<'a> {
-    fn new(boot_system_table: &SystemTable<Boot>) -> Self {
-        let mut boot_system_table = unsafe { boot_system_table.unsafe_clone() };
-        let boot_services = boot_system_table.boot_services();
-        let stdout = boot_system_table.stdout();
-        stdout.clear().ok();
+impl SyncBootLogger {
+    fn new(boot_system_table: &mut SystemTable<Boot>) -> Self {
+        // TODO: rework this barf
+        let stdout = boot_system_table.stdout() as *mut Output as u64;
+        let stdout = stdout as *mut Output;
 
         Self {
-            boot_system_table,
-            boot_services,
-            stdout: Spinlock::new(*stdout),
+            stdout: Spinlock::new(stdout),
         }
     }
 }
 
-unsafe impl<'a> Send for SyncStdOut<'a> {}
-unsafe impl<'a> Sync for SyncStdOut<'a> {}
+unsafe impl Send for SyncBootLogger {}
+unsafe impl Sync for SyncBootLogger {}
 
-impl<'a> log::Log for SyncStdOut<'a> {
+impl log::Log for SyncBootLogger {
     fn enabled(&self, _metadata: &log::Metadata) -> bool {
         true
     }
 
     fn log(&self, record: &log::Record) {
         let stdout = self.stdout.lock();
-        writeln!(stdout, "{:5}: {}", record.level(), record.args()).unwrap();
+        let stdout = unsafe { stdout.as_mut().unwrap() };
+        writeln!(
+            stdout,
+            "{:7} {}:{}@{} {}",
+            record.level(),
+            record.module_path().unwrap_or_default(),
+            record.file().unwrap_or_default(),
+            record.line().unwrap_or_default(),
+            record.args()
+        )
+        .ok();
     }
 
     fn flush(&self) {}
 }
+
+// struct SyncSerialLogger<'a> {
+//     boot_system_table: SystemTable<Boot>,
+//     serial_proto: Spinlock<ScopedProtocol<'a, Serial<'a>>>,
+// }
+
+// impl<'a> SyncSerialLogger<'a> {
+//     fn new(boot_system_table: &SystemTable<Boot>) -> Option<Self> {
+//         let boot_system_table = unsafe { boot_system_table.unsafe_clone() };
+//         let boot_services = boot_system_table.boot_services();
+//         if let Ok(serial_proto_handle) = boot_services.get_handle_for_protocol::<Serial>() {
+//             if let Ok(mut serial_proto) =
+//                 boot_services.open_protocol_exclusive::<Serial>(serial_proto_handle)
+//             {
+//                 serial_proto.reset();
+//                 return Some(Self {
+//                     boot_system_table,
+//                     serial_proto: Spinlock::new(serial_proto),
+//                 });
+//             }
+//         }
+//         None
+//     }
+// }
+
+// unsafe impl<'a> Send for SyncSerialLogger<'a> {}
+// unsafe impl<'a> Sync for SyncSerialLogger<'a> {}
+
+// impl<'a> log::Log for SyncSerialLogger<'a> {
+//     fn enabled(&self, _metadata: &log::Metadata) -> bool {
+//         true
+//     }
+
+//     fn log(&self, record: &log::Record) {
+//         let mut serial_proto = self.serial_proto.lock();
+//         writeln!(
+//             serial_proto,
+//             "{:5}:{} {}",
+//             record.level(),
+//             record.target(),
+//             record.args()
+//         )
+//         .unwrap();
+//     }
+
+//     fn flush(&self) {}
+// }
 
 enum LogDevice {
     StdOut,
@@ -161,10 +163,10 @@ fn parse_config(bytes: &[u8]) -> Option<LoaderConfig> {
 fn get_config(boot_system_table: &SystemTable<Boot>) -> LoaderConfig {
     let mut config = LoaderConfig {
         log_device: LogDevice::StdOut,
-        log_level: LevelFilter::Info,
+        log_level: LevelFilter::Trace,
     };
 
-    let mut boot_system_table_unsafe_clone = unsafe { boot_system_table.unsafe_clone() };
+    let boot_system_table_unsafe_clone = unsafe { boot_system_table.unsafe_clone() };
     let boot_services = boot_system_table_unsafe_clone.boot_services();
     if let Ok(fs_handle) = boot_services.get_handle_for_protocol::<SimpleFileSystem>() {
         if let Ok(mut fs) = boot_services.open_protocol_exclusive::<SimpleFileSystem>(fs_handle) {
@@ -187,28 +189,24 @@ fn get_config(boot_system_table: &SystemTable<Boot>) -> LoaderConfig {
     config
 }
 
-fn setup_logger(boot_system_table: &SystemTable<Boot>, config: LoaderConfig) {
-    match config.log_device {
-        LogDevice::StdOut => {
-            log::set_logger(&SyncStdOut::new(boot_system_table));
-        }
-        LogDevice::Serial => {
-            if let Some(serial) = SyncSerialLogger::new(boot_system_table) {
-                log::set_logger(&serial);
-            }
-        }
-    }
+static BOOT_LOGGER: OnceCell<SyncBootLogger> = OnceCell::uninit();
 
-    log::set_max_level(config.log_level);
+fn setup_logger(boot_system_table: &mut SystemTable<Boot>, level: LevelFilter) {
+    let logger = BOOT_LOGGER.get_or_init(move || SyncBootLogger::new(boot_system_table));
+    log::set_logger(logger).unwrap();
+    log::set_max_level(level);
 }
 
 #[no_mangle]
-extern "efiapi" fn uefi_main(image_handle: Handle, boot_system_table: SystemTable<Boot>) -> Status {
+extern "efiapi" fn uefi_main(
+    image_handle: Handle,
+    mut boot_system_table: SystemTable<Boot>,
+) -> Status {
     //#[cfg(target_arch = "x86_64")]
     //wait_for_start();
+    setup_logger(&mut boot_system_table, LevelFilter::Trace);
 
-    let config = get_config(&boot_system_table);
-    setup_logger(&boot_system_table, config);
+    let _config = get_config(&boot_system_table);
 
     let cpuid = CpuId::new();
     let cpu_vendor = cpuid
@@ -239,15 +237,16 @@ extern "efiapi" fn uefi_main(image_handle: Handle, boot_system_table: SystemTabl
         fw_revision as u16
     );
 
-    let mut mmap_buf = [0_u8; 4096];
+    let mut mmap_buf = [0_u8; 8192];
     let (_runtime_system_table, _memory_map) = boot_system_table
         .exit_boot_services(image_handle, &mut mmap_buf)
         .unwrap();
 
-    panic!();
+    loop {}
 }
 
 #[cfg(target_arch = "x86_64")]
+#[allow(dead_code)]
 // Write 0 to R9 to break the loop.
 fn wait_for_start() {
     unsafe {
@@ -264,7 +263,9 @@ fn wait_for_start() {
 #[panic_handler]
 #[cfg(target_arch = "x86_64")]
 fn panic(panic: &PanicInfo<'_>) -> ! {
-    let (file_name_addr, line_col) = if let Some(location) = panic.location() {
+    log::error!("{panic}");
+
+    let (_file_name_addr, _line_col) = if let Some(location) = panic.location() {
         (
             location.file().as_ptr() as u64,
             (location.line() as u64) | (location.column() as u64) << 32_u64,
@@ -273,14 +274,20 @@ fn panic(panic: &PanicInfo<'_>) -> ! {
         (0, 0)
     };
 
+    let qemu_exit_handle = qemu_exit::X86::new(0xf4, 0xf);
+    qemu_exit_handle.exit(_line_col as u32);
+
+    // On the real hardware, the qmeu exit shouldn't work.
+    // Prob no harm.
+    #[allow(unreachable_code)]
     loop {
         unsafe {
             asm!("cli", options(nomem, nostack));
             asm!(
                 "hlt",
                 in("r8") CORGOS_BARF,
-                in("r9") file_name_addr,
-                in("r10") line_col,
+                in("r9") _file_name_addr,
+                in("r10") _line_col,
                 options(att_syntax, nomem, nostack),
             );
         }
