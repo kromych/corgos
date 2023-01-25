@@ -14,6 +14,7 @@ use spinning_top::Spinlock;
 use uefi::prelude::cstr16;
 use uefi::prelude::Boot;
 use uefi::prelude::SystemTable;
+use uefi::proto::console::serial::Serial;
 use uefi::proto::console::text::Output;
 use uefi::proto::media::file::File;
 use uefi::proto::media::file::FileAttribute;
@@ -23,19 +24,28 @@ use uefi::CStr16;
 use uefi::Handle;
 use uefi::Status;
 
+enum BootLoggerOutput {
+    None,
+    Stdout(*mut Output<'static>),
+}
+
 struct SyncBootLogger {
-    stdout: Spinlock<*mut Output<'static>>,
+    out: Spinlock<BootLoggerOutput>,
 }
 
 impl SyncBootLogger {
-    fn new(boot_system_table: &mut SystemTable<Boot>) -> Self {
+    fn new() -> Self {
+        Self {
+            out: Spinlock::new(BootLoggerOutput::None),
+        }
+    }
+
+    fn log_to_stdout(&mut self, boot_system_table: &mut SystemTable<Boot>) {
         // TODO: rework this barf
         let stdout = boot_system_table.stdout() as *mut Output as u64;
         let stdout = stdout as *mut Output;
 
-        Self {
-            stdout: Spinlock::new(stdout),
-        }
+        self.out = Spinlock::new(BootLoggerOutput::Stdout(stdout));
     }
 }
 
@@ -48,69 +58,27 @@ impl log::Log for SyncBootLogger {
     }
 
     fn log(&self, record: &log::Record) {
-        let stdout = self.stdout.lock();
-        let stdout = unsafe { stdout.as_mut().unwrap() };
-        writeln!(
-            stdout,
-            "{:7} {}:{}@{}  {}",
-            record.level(),
-            record.module_path().unwrap_or_default(),
-            record.file().unwrap_or_default(),
-            record.line().unwrap_or_default(),
-            record.args()
-        )
-        .ok();
+        let out = self.out.lock();
+        match *out {
+            BootLoggerOutput::Stdout(stdout) => {
+                let stdout = unsafe { stdout.as_mut().unwrap() };
+                writeln!(
+                    stdout,
+                    "{:7} {}:{}@{}  {}",
+                    record.level(),
+                    record.module_path().unwrap_or_default(),
+                    record.file().unwrap_or_default(),
+                    record.line().unwrap_or_default(),
+                    record.args()
+                )
+                .ok();
+            }
+            BootLoggerOutput::None => todo!(),
+        }
     }
 
     fn flush(&self) {}
 }
-
-// struct SyncSerialLogger<'a> {
-//     boot_system_table: SystemTable<Boot>,
-//     serial_proto: Spinlock<ScopedProtocol<'a, Serial<'a>>>,
-// }
-
-// impl<'a> SyncSerialLogger<'a> {
-//     fn new(boot_system_table: &SystemTable<Boot>) -> Option<Self> {
-//         let boot_system_table = unsafe { boot_system_table.unsafe_clone() };
-//         let boot_services = boot_system_table.boot_services();
-//         if let Ok(serial_proto_handle) = boot_services.get_handle_for_protocol::<Serial>() {
-//             if let Ok(mut serial_proto) =
-//                 boot_services.open_protocol_exclusive::<Serial>(serial_proto_handle)
-//             {
-//                 serial_proto.reset();
-//                 return Some(Self {
-//                     boot_system_table,
-//                     serial_proto: Spinlock::new(serial_proto),
-//                 });
-//             }
-//         }
-//         None
-//     }
-// }
-
-// unsafe impl<'a> Send for SyncSerialLogger<'a> {}
-// unsafe impl<'a> Sync for SyncSerialLogger<'a> {}
-
-// impl<'a> log::Log for SyncSerialLogger<'a> {
-//     fn enabled(&self, _metadata: &log::Metadata) -> bool {
-//         true
-//     }
-
-//     fn log(&self, record: &log::Record) {
-//         let mut serial_proto = self.serial_proto.lock();
-//         writeln!(
-//             serial_proto,
-//             "{:5}:{} {}",
-//             record.level(),
-//             record.target(),
-//             record.args()
-//         )
-//         .unwrap();
-//     }
-
-//     fn flush(&self) {}
-// }
 
 #[derive(Debug, Clone)]
 enum LogDevice {
@@ -167,8 +135,8 @@ fn parse_config(bytes: &[u8]) -> Option<LoaderConfig> {
 
 fn get_config(boot_system_table: &SystemTable<Boot>) -> LoaderConfig {
     let mut config = LoaderConfig {
-        log_device: LogDevice::Serial,
-        log_level: LevelFilter::Info,
+        log_device: LogDevice::StdOut,
+        log_level: LevelFilter::Trace,
     };
 
     let boot_system_table_unsafe_clone = unsafe { boot_system_table.unsafe_clone() };
@@ -199,7 +167,12 @@ fn get_config(boot_system_table: &SystemTable<Boot>) -> LoaderConfig {
 static BOOT_LOGGER: OnceCell<SyncBootLogger> = OnceCell::uninit();
 
 fn setup_logger(boot_system_table: &mut SystemTable<Boot>, level: LevelFilter) {
-    let logger = BOOT_LOGGER.get_or_init(move || SyncBootLogger::new(boot_system_table));
+    let logger = BOOT_LOGGER.get_or_init(move || {
+        let mut logger = SyncBootLogger::new();
+        logger.log_to_stdout(boot_system_table);
+        logger
+    });
+
     log::set_logger(logger).unwrap();
     log::set_max_level(level);
 }
@@ -218,8 +191,15 @@ extern "efiapi" fn uefi_main(
     //#[cfg(target_arch = "x86_64")]
     //wait_for_start();
     setup_logger(&mut boot_system_table, LevelFilter::Trace);
-
     let _config = get_config(&boot_system_table);
+
+    let boot_services = boot_system_table.boot_services();
+    if let Ok(_serial_proto_handle) = boot_services.get_handle_for_protocol::<Serial>() {
+        // if let Ok(mut serial) = boot_services.open_protocol_exclusive::<Serial>(serial_proto_handle)
+        // {
+        //     serial.write(b"SERIAL").ok();
+        // }
+    }
 
     let cpuid = CpuId::new();
     let cpu_vendor = cpuid
