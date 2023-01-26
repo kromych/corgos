@@ -1,8 +1,6 @@
-# [target.x86_64-boot]
-# rustflags = [
-#     "-C", "link-arg=/debug:dwarf", 
-#     "-C", "link-arg=/base:0x1400000",
-#     "-C", "link-arg=/fixed",
-#     "-C", "relocation-model=static", 
-#     "-C", "code-model=small",
-# ]
+[target.x86_64-boot]
+rustflags = [
+    "-C", "link-arg=/base:0",
+    "-C", "relocation-model=static", 
+    "-C", "code-model=small",
+]

@@ -230,6 +230,8 @@ extern "efiapi" fn uefi_main(
         fw_revision as u16
     );
 
+    log::info!("Exiting boot services");
+
     let mut mmap_buf = [0_u8; 8192];
     let (_runtime_system_table, _memory_map) = boot_system_table
         .exit_boot_services(image_handle, &mut mmap_buf)
