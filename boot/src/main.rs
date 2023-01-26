@@ -6,60 +6,94 @@ use core::arch::asm;
 use core::fmt::Write;
 use core::panic::PanicInfo;
 
+use conquer_once::spin::OnceCell;
 use log::LevelFilter;
+use qemu_exit::QEMUExit;
 use raw_cpuid::CpuId;
+use spinning_top::Spinlock;
 use uefi::prelude::cstr16;
 use uefi::prelude::Boot;
-use uefi::prelude::BootServices;
 use uefi::prelude::SystemTable;
 use uefi::proto::console::serial::Serial;
+use uefi::proto::console::text::Output;
 use uefi::proto::media::file::File;
 use uefi::proto::media::file::FileAttribute;
 use uefi::proto::media::file::FileMode;
 use uefi::proto::media::fs::SimpleFileSystem;
 use uefi::CStr16;
 use uefi::Handle;
+use uefi::Status;
 
-struct SerialLogger {}
+enum BootLoggerOutput {
+    None,
+    Stdout(*mut Output<'static>),
+}
 
-impl log::Log for SerialLogger {
+struct SyncBootLogger {
+    out: Spinlock<BootLoggerOutput>,
+}
+
+impl SyncBootLogger {
+    fn new() -> Self {
+        Self {
+            out: Spinlock::new(BootLoggerOutput::None),
+        }
+    }
+
+    fn log_to_stdout(&mut self, boot_system_table: &mut SystemTable<Boot>) {
+        // TODO: rework this barf
+        let stdout = boot_system_table.stdout() as *mut Output as u64;
+        let stdout = stdout as *mut Output;
+
+        self.out = Spinlock::new(BootLoggerOutput::Stdout(stdout));
+    }
+}
+
+unsafe impl Send for SyncBootLogger {}
+unsafe impl Sync for SyncBootLogger {}
+
+impl log::Log for SyncBootLogger {
     fn enabled(&self, _metadata: &log::Metadata) -> bool {
         true
     }
 
-    fn log(&self, _record: &log::Record) {
-        //writeln!(serial, "{:5}: {}", record.level(), record.args()).unwrap();
+    fn log(&self, record: &log::Record) {
+        let out = self.out.lock();
+        match *out {
+            BootLoggerOutput::Stdout(stdout) => {
+                let stdout = unsafe { stdout.as_mut().unwrap() };
+                writeln!(
+                    stdout,
+                    "{:7} {}:{}@{}  {}",
+                    record.level(),
+                    record.module_path().unwrap_or_default(),
+                    record.file().unwrap_or_default(),
+                    record.line().unwrap_or_default(),
+                    record.args()
+                )
+                .ok();
+            }
+            BootLoggerOutput::None => todo!(),
+        }
     }
 
     fn flush(&self) {}
 }
 
-struct StdOutLogger {}
-
-impl log::Log for StdOutLogger {
-    fn enabled(&self, _metadata: &log::Metadata) -> bool {
-        true
-    }
-
-    fn log(&self, _record: &log::Record) {
-        //writeln!(stdout, "{:5}: {}", record.level(), record.args()).unwrap();
-    }
-
-    fn flush(&self) {}
-}
-
+#[derive(Debug, Clone)]
 enum LogDevice {
     StdOut,
     Serial,
 }
 
+#[derive(Debug, Clone)]
 struct LoaderConfig {
     log_device: LogDevice,
     log_level: LevelFilter,
 }
 
 /// The name of the configuration file in the ESP partition alongside the loader.
-const CORGOS_INI: &CStr16 = cstr16!("corgos-boot.ini");
+const CORGOS_INI: &CStr16 = cstr16!("efi\\boot\\corgos-boot.ini");
 
 /// Upon panic, b"CORGBARF" is loaded into R8. R9 contains the address of the file name,
 /// R10 contains the line number in the least significant 32 bits, and the column number
@@ -89,6 +123,9 @@ fn parse_config(bytes: &[u8]) -> Option<LoaderConfig> {
                 b"trace" => config.log_level = LevelFilter::Trace,
                 _ => continue,
             },
+            b"revision" => log::trace!("Revision '{}'", unsafe {
+                core::str::from_utf8_unchecked(value)
+            }),
             _ => continue,
         }
     }
@@ -96,12 +133,14 @@ fn parse_config(bytes: &[u8]) -> Option<LoaderConfig> {
     Some(config)
 }
 
-fn get_config(boot_services: &BootServices) -> LoaderConfig {
+fn get_config(boot_system_table: &SystemTable<Boot>) -> LoaderConfig {
     let mut config = LoaderConfig {
         log_device: LogDevice::StdOut,
-        log_level: LevelFilter::Info,
+        log_level: LevelFilter::Trace,
     };
 
+    let boot_system_table_unsafe_clone = unsafe { boot_system_table.unsafe_clone() };
+    let boot_services = boot_system_table_unsafe_clone.boot_services();
     if let Ok(fs_handle) = boot_services.get_handle_for_protocol::<SimpleFileSystem>() {
         if let Ok(mut fs) = boot_services.open_protocol_exclusive::<SimpleFileSystem>(fs_handle) {
             if let Ok(mut root_directory) = fs.open_volume() {
@@ -120,32 +159,47 @@ fn get_config(boot_services: &BootServices) -> LoaderConfig {
         }
     }
 
+    log::trace!("{config:?}");
+
     config
 }
 
-fn setup_logger(boot_services: &BootServices, config: LoaderConfig) {
-    match config.log_device {
-        LogDevice::StdOut => {}
-        LogDevice::Serial => {
-            if let Ok(serial_proto_handle) = boot_services.get_handle_for_protocol::<Serial>() {
-                if let Ok(_serial_proto) =
-                    boot_services.open_protocol_exclusive::<Serial>(serial_proto_handle)
-                {
-                    // serial_proto.reset();
-                    // log::set_logger(logger).expect("must be able to set the logger");
-                }
-            }
-        }
-    }
+static BOOT_LOGGER: OnceCell<SyncBootLogger> = OnceCell::uninit();
 
-    log::set_max_level(config.log_level);
+fn setup_logger(boot_system_table: &mut SystemTable<Boot>, level: LevelFilter) {
+    let logger = BOOT_LOGGER.get_or_init(move || {
+        let mut logger = SyncBootLogger::new();
+        logger.log_to_stdout(boot_system_table);
+        logger
+    });
+
+    log::set_logger(logger).unwrap();
+    log::set_max_level(level);
 }
 
 #[no_mangle]
-pub extern "efiapi" fn efi_main(image_handle: Handle, boot_system_table: SystemTable<Boot>) -> ! {
-    let mut boot_system_table_unsafe_clone = unsafe { boot_system_table.unsafe_clone() };
-    let stdout = boot_system_table_unsafe_clone.stdout();
-    stdout.clear().unwrap();
+extern "efiapi" fn uefi_main(
+    image_handle: Handle,
+    mut boot_system_table: SystemTable<Boot>,
+) -> Status {
+    unsafe {
+        boot_system_table
+            .boot_services()
+            .set_image_handle(image_handle);
+    }
+
+    //#[cfg(target_arch = "x86_64")]
+    //wait_for_start();
+    setup_logger(&mut boot_system_table, LevelFilter::Trace);
+    let _config = get_config(&boot_system_table);
+
+    let boot_services = boot_system_table.boot_services();
+    if let Ok(_serial_proto_handle) = boot_services.get_handle_for_protocol::<Serial>() {
+        // if let Ok(mut serial) = boot_services.open_protocol_exclusive::<Serial>(serial_proto_handle)
+        // {
+        //     serial.write(b"SERIAL").ok();
+        // }
+    }
 
     let cpuid = CpuId::new();
     let cpu_vendor = cpuid
@@ -153,8 +207,7 @@ pub extern "efiapi" fn efi_main(image_handle: Handle, boot_system_table: SystemT
         .expect("Must be able to get CPU vendor");
     let brand_str = cpuid.get_processor_brand_string();
 
-    writeln!(
-        stdout,
+    log::info!(
         "Loading **CorgOS** on {} {}",
         cpu_vendor.as_str(),
         if let Some(b) = &brand_str {
@@ -162,39 +215,52 @@ pub extern "efiapi" fn efi_main(image_handle: Handle, boot_system_table: SystemT
         } else {
             ""
         }
-    )
-    .unwrap();
+    );
 
     if let Some(hv_info) = cpuid.get_hypervisor_info() {
-        writeln!(stdout, "Hypervisor detected: {:?}", hv_info.identify()).unwrap();
+        log::info!("Hypervisor detected: {:?}", hv_info.identify());
     }
 
     let fw_vendor = boot_system_table.firmware_vendor();
     let fw_revision = boot_system_table.firmware_revision();
     let uefi_revision = boot_system_table.uefi_revision();
-    writeln!(
-        stdout,
+    log::info!(
         "Firmware {fw_vendor} {:x}.{:x}, UEFI revision {uefi_revision}",
         fw_revision >> 16,
         fw_revision as u16
-    )
-    .unwrap();
+    );
 
-    let boot_services = boot_system_table.boot_services();
-    let config = get_config(boot_services);
-    setup_logger(boot_services, config);
+    log::info!("Exiting boot services");
 
-    let mut mmap_buf = [0_u8; 4096];
+    let mut mmap_buf = [0_u8; 8192];
     let (_runtime_system_table, _memory_map) = boot_system_table
         .exit_boot_services(image_handle, &mut mmap_buf)
         .unwrap();
 
-    panic!();
+    loop {}
+}
+
+#[cfg(target_arch = "x86_64")]
+#[allow(dead_code)]
+// Write 0 to R9 to break the loop.
+fn wait_for_start() {
+    unsafe {
+        asm!(
+            "1:     cmpq  %r9, 0",
+            "       pause",
+            "       jne 1b",
+            in("r9") 1,
+            options(att_syntax, nostack),
+        );
+    }
 }
 
 #[panic_handler]
+#[cfg(target_arch = "x86_64")]
 fn panic(panic: &PanicInfo<'_>) -> ! {
-    let (file_name_addr, line_col) = if let Some(location) = panic.location() {
+    log::error!("{panic}");
+
+    let (_file_name_addr, _line_col) = if let Some(location) = panic.location() {
         (
             location.file().as_ptr() as u64,
             (location.line() as u64) | (location.column() as u64) << 32_u64,
@@ -203,16 +269,25 @@ fn panic(panic: &PanicInfo<'_>) -> ! {
         (0, 0)
     };
 
+    let qemu_exit_handle = qemu_exit::X86::new(0xf4, 0xf);
+    qemu_exit_handle.exit(_line_col as u32);
+
+    // On the real hardware, the qmeu exit shouldn't work.
+    // Prob no harm.
+    #[allow(unreachable_code)]
     loop {
         unsafe {
             asm!("cli", options(nomem, nostack));
             asm!(
                 "hlt",
                 in("r8") CORGOS_BARF,
-                in("r9") file_name_addr,
-                in("r10") line_col,
+                in("r9") _file_name_addr,
+                in("r10") _line_col,
                 options(att_syntax, nomem, nostack),
             );
         }
     }
 }
+
+#[no_mangle]
+extern "efiapi" fn __chkstk() {}

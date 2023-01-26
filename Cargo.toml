@@ -7,9 +7,11 @@ members = [
 
 [workspace.dependencies]
 raw-cpuid = { version = "10.6", default-features = false }
-uefi = { version = "0.18", default-features = false }
+uefi = { version = "0.19", default-features = false }
 elf = { version = "0.7", default-features = false }
 log = { version = "0.4", default-features = false }
 spinning_top = "0.2"
+conquer-once = { version = "0.3", default-features = false }
+qemu-exit = { version = "3", default-features = false }
 
 corg-ini = { path = "corgini" }

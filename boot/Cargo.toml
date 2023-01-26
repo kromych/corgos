@@ -10,4 +10,7 @@ log.workspace = true
 raw-cpuid.workspace = true
 elf.workspace = true
 spinning_top.workspace = true
+conquer-once.workspace = true
+qemu-exit.workspace = true
+
 corg-ini.workspace = true
