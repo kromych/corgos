@@ -13,5 +13,6 @@ log = { version = "0.4", default-features = false }
 spinning_top = "0.2"
 conquer-once = { version = "0.3", default-features = false }
 qemu-exit = { version = "3", default-features = false }
+uart_16550 = { version = "0.2", default-features = false }
 
 corg-ini = { path = "corgini" }

@@ -11,41 +11,57 @@ use log::LevelFilter;
 use qemu_exit::QEMUExit;
 use raw_cpuid::CpuId;
 use spinning_top::Spinlock;
+use uart_16550::SerialPort;
 use uefi::prelude::cstr16;
 use uefi::prelude::Boot;
 use uefi::prelude::SystemTable;
-use uefi::proto::console::serial::Serial;
 use uefi::proto::console::text::Output;
 use uefi::proto::media::file::File;
 use uefi::proto::media::file::FileAttribute;
 use uefi::proto::media::file::FileMode;
 use uefi::proto::media::fs::SimpleFileSystem;
+use uefi::table::runtime::ResetType;
 use uefi::CStr16;
 use uefi::Handle;
 use uefi::Status;
 
 enum BootLoggerOutput {
     None,
-    Stdout(*mut Output<'static>),
+    Stdout,
+    Serial,
 }
 
 struct SyncBootLogger {
-    out: Spinlock<BootLoggerOutput>,
+    stdout: Option<Spinlock<*mut Output<'static>>>,
+    serial: Option<Spinlock<SerialPort>>,
+    output: BootLoggerOutput,
 }
 
 impl SyncBootLogger {
     fn new() -> Self {
         Self {
-            out: Spinlock::new(BootLoggerOutput::None),
+            stdout: None,
+            serial: None,
+            output: BootLoggerOutput::None,
         }
     }
 
     fn log_to_stdout(&mut self, boot_system_table: &mut SystemTable<Boot>) {
         // TODO: rework this barf
+        boot_system_table.stdout().clear().ok();
         let stdout = boot_system_table.stdout() as *mut Output as u64;
         let stdout = stdout as *mut Output;
 
-        self.out = Spinlock::new(BootLoggerOutput::Stdout(stdout));
+        self.stdout = Some(Spinlock::new(stdout));
+        self.output = BootLoggerOutput::Stdout;
+    }
+
+    fn log_to_serial(&mut self, port: u16) {
+        let mut serial_port = unsafe { SerialPort::new(port) };
+        serial_port.init();
+
+        self.serial = Some(Spinlock::new(unsafe { SerialPort::new(port) }));
+        self.output = BootLoggerOutput::Serial;
     }
 }
 
@@ -58,22 +74,39 @@ impl log::Log for SyncBootLogger {
     }
 
     fn log(&self, record: &log::Record) {
-        let out = self.out.lock();
-        match *out {
-            BootLoggerOutput::Stdout(stdout) => {
-                let stdout = unsafe { stdout.as_mut().unwrap() };
-                writeln!(
-                    stdout,
-                    "{:7} {}:{}@{}  {}",
-                    record.level(),
-                    record.module_path().unwrap_or_default(),
-                    record.file().unwrap_or_default(),
-                    record.line().unwrap_or_default(),
-                    record.args()
-                )
-                .ok();
+        match self.output {
+            BootLoggerOutput::None => {}
+            BootLoggerOutput::Stdout => {
+                if let Some(stdout) = &self.stdout {
+                    let stdout = stdout.lock();
+                    let stdout = unsafe { stdout.as_mut().unwrap() };
+                    writeln!(
+                        stdout,
+                        "{:7} {}:{}@{}  {}",
+                        record.level(),
+                        record.module_path().unwrap_or_default(),
+                        record.file().unwrap_or_default(),
+                        record.line().unwrap_or_default(),
+                        record.args()
+                    )
+                    .ok();
+                }
             }
-            BootLoggerOutput::None => todo!(),
+            BootLoggerOutput::Serial => {
+                if let Some(serial_port) = &self.serial {
+                    let mut serial_port = serial_port.lock();
+                    writeln!(
+                        serial_port,
+                        "{:7} {}:{}@{}  {}",
+                        record.level(),
+                        record.module_path().unwrap_or_default(),
+                        record.file().unwrap_or_default(),
+                        record.line().unwrap_or_default(),
+                        record.args()
+                    )
+                    .ok();
+                }
+            }
         }
     }
 
@@ -83,7 +116,8 @@ impl log::Log for SyncBootLogger {
 #[derive(Debug, Clone)]
 enum LogDevice {
     StdOut,
-    Serial,
+    Com1,
+    Com2,
 }
 
 #[derive(Debug, Clone)]
@@ -93,7 +127,7 @@ struct LoaderConfig {
 }
 
 /// The name of the configuration file in the ESP partition alongside the loader.
-const CORGOS_INI: &CStr16 = cstr16!("efi\\boot\\corgos-boot.ini");
+const CORGOS_INI: &CStr16 = cstr16!("corgos-boot.ini");
 
 /// Upon panic, b"CORGBARF" is loaded into R8. R9 contains the address of the file name,
 /// R10 contains the line number in the least significant 32 bits, and the column number
@@ -111,7 +145,8 @@ fn parse_config(bytes: &[u8]) -> Option<LoaderConfig> {
     while let Ok(Some(corg_ini::KeyValue { key, value })) = parser.parse() {
         match key {
             b"log_device" => match value {
-                b"serial" => config.log_device = LogDevice::Serial,
+                b"com1" => config.log_device = LogDevice::Com1,
+                b"com2" => config.log_device = LogDevice::Com2,
                 b"stdout" => config.log_device = LogDevice::StdOut,
                 _ => continue,
             },
@@ -166,15 +201,19 @@ fn get_config(boot_system_table: &SystemTable<Boot>) -> LoaderConfig {
 
 static BOOT_LOGGER: OnceCell<SyncBootLogger> = OnceCell::uninit();
 
-fn setup_logger(boot_system_table: &mut SystemTable<Boot>, level: LevelFilter) {
+fn setup_logger(boot_system_table: &mut SystemTable<Boot>, config: LoaderConfig) {
     let logger = BOOT_LOGGER.get_or_init(move || {
         let mut logger = SyncBootLogger::new();
-        logger.log_to_stdout(boot_system_table);
+        match config.log_device {
+            LogDevice::StdOut => logger.log_to_stdout(boot_system_table),
+            LogDevice::Com1 => logger.log_to_serial(0x03f8),
+            LogDevice::Com2 => logger.log_to_serial(0x02f8),
+        };
         logger
     });
 
     log::set_logger(logger).unwrap();
-    log::set_max_level(level);
+    log::set_max_level(config.log_level);
 }
 
 #[no_mangle]
@@ -190,16 +229,8 @@ extern "efiapi" fn uefi_main(
 
     //#[cfg(target_arch = "x86_64")]
     //wait_for_start();
-    setup_logger(&mut boot_system_table, LevelFilter::Trace);
-    let _config = get_config(&boot_system_table);
-
-    let boot_services = boot_system_table.boot_services();
-    if let Ok(_serial_proto_handle) = boot_services.get_handle_for_protocol::<Serial>() {
-        // if let Ok(mut serial) = boot_services.open_protocol_exclusive::<Serial>(serial_proto_handle)
-        // {
-        //     serial.write(b"SERIAL").ok();
-        // }
-    }
+    let config = get_config(&boot_system_table);
+    setup_logger(&mut boot_system_table, config);
 
     let cpuid = CpuId::new();
     let cpu_vendor = cpuid
@@ -230,14 +261,43 @@ extern "efiapi" fn uefi_main(
         fw_revision as u16
     );
 
-    log::info!("Exiting boot services");
+    log::info!("Exiting boot services; hit a key to reboot");
+    boot_wait_for_key_press(&mut boot_system_table);
 
     let mut mmap_buf = [0_u8; 8192];
-    let (_runtime_system_table, _memory_map) = boot_system_table
+    let (runtime_system_table, _memory_map) = boot_system_table
         .exit_boot_services(image_handle, &mut mmap_buf)
         .unwrap();
 
-    loop {}
+    unsafe {
+        runtime_system_table
+            .runtime_services()
+            .reset(ResetType::Warm, Status::ABORTED, None);
+    }
+}
+
+fn boot_wait_for_key_press(boot_system_table: &mut SystemTable<Boot>) {
+    unsafe {
+        let mut boot_system_table_key_event = boot_system_table.unsafe_clone();
+        let key_event = boot_system_table_key_event.stdin().wait_for_key_event();
+        {
+            let boot_system_table_wait_event = boot_system_table.unsafe_clone();
+            boot_system_table_wait_event
+                .boot_services()
+                .wait_for_event(&mut [key_event.unsafe_clone()])
+                .ok();
+        }
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[allow(dead_code)]
+fn dead_loop() -> ! {
+    loop {
+        unsafe {
+            asm!("cli", "hlt", options(nomem, nostack));
+        }
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
