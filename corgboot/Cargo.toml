@@ -12,6 +12,6 @@ elf.workspace = true
 spinning_top.workspace = true
 conquer-once.workspace = true
 qemu-exit.workspace = true
-uart_16550.workspace = true
 
 corg-ini.workspace = true
+corg-uart.workspace = true

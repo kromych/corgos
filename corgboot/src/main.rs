@@ -7,11 +7,13 @@ use core::fmt::Write;
 use core::panic::PanicInfo;
 
 use conquer_once::spin::OnceCell;
+use corg_uart::BaudDivisor;
+use corg_uart::ComPort;
+use corg_uart::ComPortIo;
 use log::LevelFilter;
 use qemu_exit::QEMUExit;
 use raw_cpuid::CpuId;
 use spinning_top::Spinlock;
-use uart_16550::SerialPort;
 use uefi::prelude::cstr16;
 use uefi::prelude::Boot;
 use uefi::prelude::SystemTable;
@@ -33,7 +35,7 @@ enum BootLoggerOutput {
 
 struct SyncBootLogger {
     stdout: Option<Spinlock<*mut Output<'static>>>,
-    serial: Option<Spinlock<SerialPort>>,
+    serial: Option<Spinlock<ComPort>>,
     output: BootLoggerOutput,
 }
 
@@ -56,11 +58,10 @@ impl SyncBootLogger {
         self.output = BootLoggerOutput::Stdout;
     }
 
-    fn log_to_serial(&mut self, port: u16) {
-        let mut serial_port = unsafe { SerialPort::new(port) };
-        serial_port.init();
+    fn log_to_serial(&mut self, port: ComPortIo, baud: BaudDivisor) {
+        let serial_port = ComPort::new(port, baud);
 
-        self.serial = Some(Spinlock::new(unsafe { SerialPort::new(port) }));
+        self.serial = Some(Spinlock::new(serial_port));
         self.output = BootLoggerOutput::Serial;
     }
 }
@@ -82,7 +83,7 @@ impl log::Log for SyncBootLogger {
                     let stdout = unsafe { stdout.as_mut().unwrap() };
                     writeln!(
                         stdout,
-                        "{:7} {}:{}@{}  {}",
+                        "[{:7}][{}:{}@{}]  {}",
                         record.level(),
                         record.module_path().unwrap_or_default(),
                         record.file().unwrap_or_default(),
@@ -95,9 +96,9 @@ impl log::Log for SyncBootLogger {
             BootLoggerOutput::Serial => {
                 if let Some(serial_port) = &self.serial {
                     let mut serial_port = serial_port.lock();
-                    writeln!(
+                    write!(
                         serial_port,
-                        "{:7} {}:{}@{}  {}",
+                        "[{:7}][{}:{}@{}]  {}\r\n",
                         record.level(),
                         record.module_path().unwrap_or_default(),
                         record.file().unwrap_or_default(),
@@ -194,26 +195,32 @@ fn get_config(boot_system_table: &SystemTable<Boot>) -> LoaderConfig {
         }
     }
 
-    log::trace!("{config:?}");
-
     config
 }
 
 static BOOT_LOGGER: OnceCell<SyncBootLogger> = OnceCell::uninit();
 
-fn setup_logger(boot_system_table: &mut SystemTable<Boot>, config: LoaderConfig) {
+fn setup_logger(boot_system_table: &mut SystemTable<Boot>, config: &LoaderConfig) {
     let logger = BOOT_LOGGER.get_or_init(move || {
         let mut logger = SyncBootLogger::new();
         match config.log_device {
             LogDevice::StdOut => logger.log_to_stdout(boot_system_table),
-            LogDevice::Com1 => logger.log_to_serial(0x03f8),
-            LogDevice::Com2 => logger.log_to_serial(0x02f8),
+            LogDevice::Com1 => logger.log_to_serial(ComPortIo::Com1, BaudDivisor::Baud115200),
+            LogDevice::Com2 => logger.log_to_serial(ComPortIo::Com2, BaudDivisor::Baud115200),
         };
         logger
     });
 
     log::set_logger(logger).unwrap();
     log::set_max_level(config.log_level);
+
+    let com1 = ComPort::new(ComPortIo::Com1, BaudDivisor::Baud115200).kind();
+    let com2 = ComPort::new(ComPortIo::Com2, BaudDivisor::Baud115200).kind();
+    let com3 = ComPort::new(ComPortIo::Com3, BaudDivisor::Baud115200).kind();
+    let com4 = ComPort::new(ComPortIo::Com4, BaudDivisor::Baud115200).kind();
+
+    log::trace!("{config:?}");
+    log::trace!("com1 {com1:?}, com2 {com2:?}, com3 {com3:?}, com4 {com4:?}");
 }
 
 #[no_mangle]
@@ -230,7 +237,7 @@ extern "efiapi" fn uefi_main(
     //#[cfg(target_arch = "x86_64")]
     //wait_for_start();
     let config = get_config(&boot_system_table);
-    setup_logger(&mut boot_system_table, config);
+    setup_logger(&mut boot_system_table, &config);
 
     let cpuid = CpuId::new();
     let cpu_vendor = cpuid
@@ -250,6 +257,8 @@ extern "efiapi" fn uefi_main(
 
     if let Some(hv_info) = cpuid.get_hypervisor_info() {
         log::info!("Hypervisor detected: {:?}", hv_info.identify());
+    } else {
+        log::info!("No hypervisor detected (wasn't trying too hard though)");
     }
 
     let fw_vendor = boot_system_table.firmware_vendor();
