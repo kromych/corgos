@@ -136,6 +136,10 @@ const CORGOS_INI: &CStr16 = cstr16!("corgos-boot.ini");
 /// The interrupts are disabled and the processor is halted.
 const CORGOS_BARF: u64 = u64::from_le_bytes([0x46, 0x52, 0x41, 0x42, 0x47, 0x52, 0x4f, 0x43]);
 
+/// Timeout for the boot services.
+const WATCHDOG_TIMEOUT_SECONDS: usize = 15;
+const WATCHDOG_TIMEOUT_CODE: u64 = CORGOS_BARF;
+
 fn parse_config(bytes: &[u8]) -> Option<LoaderConfig> {
     let mut config = LoaderConfig {
         log_device: LogDevice::StdOut,
@@ -270,7 +274,13 @@ extern "efiapi" fn uefi_main(
         fw_revision as u16
     );
 
-    log::info!("Exiting boot services; hit a key to reboot");
+    boot_system_table
+        .boot_services()
+        .set_watchdog_timer(WATCHDOG_TIMEOUT_SECONDS, WATCHDOG_TIMEOUT_CODE, None)
+        .unwrap();
+    log::info!(
+        "Exiting boot services; hit a key to reboot. Timeout {WATCHDOG_TIMEOUT_SECONDS} seconds"
+    );
     boot_wait_for_key_press(&mut boot_system_table);
 
     let mut mmap_buf = [0_u8; 8192];
