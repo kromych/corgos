@@ -1,8 +1,9 @@
 [workspace]
 resolver = "2"
 members = [
-  "boot",
-  "corgini"
+  "corgboot",
+  "corgini",
+  "corguart",
 ]
 
 [workspace.dependencies]
@@ -15,3 +16,4 @@ conquer-once = { version = "0.3", default-features = false }
 qemu-exit = { version = "3", default-features = false }
 
 corg-ini = { path = "corgini" }
+corg-uart = { path = "corguart" }

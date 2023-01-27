@@ -46,11 +46,16 @@ name = "corg-ini"
 version = "0.1.0"
 
 [[package]]
+name = "corg-uart"
+version = "0.1.0"
+
+[[package]]
 name = "corgos-boot"
 version = "0.1.0"
 dependencies = [
  "conquer-once",
  "corg-ini",
+ "corg-uart",
  "elf",
  "log",
  "qemu-exit",

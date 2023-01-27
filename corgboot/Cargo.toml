@@ -14,3 +14,4 @@ conquer-once.workspace = true
 qemu-exit.workspace = true
 
 corg-ini.workspace = true
+corg-uart.workspace = true
