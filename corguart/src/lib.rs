@@ -96,48 +96,57 @@ pub enum BaudDivisor {
 }
 
 #[inline]
-#[cfg(target_arch = "x86_64")]
 fn outp8(port: u16, val: u8) {
-    unsafe {
-        asm!("outb %al, %dx", in("al") val, in("dx") port, options(att_syntax, nostack, nomem));
+    if cfg!(target_arch = "x86_64") {
+        unsafe {
+            asm!("outb %al, %dx", in("al") val, in("dx") port, options(att_syntax, nostack, nomem));
+        }
+    } else {
+        let _ = (port, val);
     }
 }
 
 #[inline]
-#[cfg(target_arch = "x86_64")]
 fn outp16(port: u16, val: u16) {
-    unsafe {
-        asm!("outw %ax, %dx", in("ax") val, in("dx") port, options(att_syntax, nostack, nomem));
+    if cfg!(target_arch = "x86_64") {
+        unsafe {
+            asm!("outw %ax, %dx", in("ax") val, in("dx") port, options(att_syntax, nostack, nomem));
+        }
+    } else {
+        let _ = (port, val);
     }
 }
 
 #[inline]
-#[cfg(target_arch = "x86_64")]
 fn inp8(port: u16) -> u8 {
-    let mut val: u8;
-
-    unsafe {
-        asm!("inb %dx, %al", out("al") val, in("dx") port, options(att_syntax, nostack, nomem));
+    if cfg!(target_arch = "x86_64") {
+        let mut val;
+        unsafe {
+            asm!("inb %dx, %al", out("al") val, in("dx") port, options(att_syntax, nostack, nomem));
+        }
+        val
+    } else {
+        let _ = port;
+        0
     }
-    return val;
 }
 
 #[inline]
 #[allow(dead_code)]
-#[cfg(target_arch = "x86_64")]
 fn inp16(port: u16) -> u16 {
-    let mut val: u16;
-
-    unsafe {
-        asm!("inw %dx, %ax", out("ax") val, in("dx") port, options(att_syntax, nostack, nomem));
+    if cfg!(target_arch = "x86_64") {
+        unsafe {
+            let mut val;
+            asm!("inw %dx, %ax", out("ax") val, in("dx") port, options(att_syntax, nostack, nomem));
+            val
+        }
+    } else {
+        let _ = port;
+        0
     }
-    return val;
 }
 
 fn detect(port: ComPortIo) -> UartKind {
-    let data;
-    let mut old_data;
-
     let base_addr = port as u16;
     let iir = base_addr + 2; // Interrupt Id Register:  +2
     let mcr = base_addr + 4; // Modem Control Register: +4
@@ -146,7 +155,7 @@ fn detect(port: ComPortIo) -> UartKind {
 
     // See if a UART is present anyway
 
-    old_data = inp8(mcr);
+    let mut old_data = inp8(mcr);
     outp8(mcr, 0x10); // Bit 5: Loop
 
     if inp8(msr) & 0xf0 == 0xf0 {
@@ -181,7 +190,7 @@ fn detect(port: ComPortIo) -> UartKind {
     // Check if there's a FIFO
 
     outp8(iir, 1);
-    data = inp8(iir);
+    let data = inp8(iir);
 
     // Some old-fashioned software relies on this!
 
@@ -194,7 +203,7 @@ fn detect(port: ComPortIo) -> UartKind {
         return UartKind::Uart16550;
     }
 
-    return UartKind::Uart16550a;
+    UartKind::Uart16550a
 }
 
 fn init(port: ComPortIo, kind: UartKind, baud: BaudDivisor) {
@@ -259,16 +268,16 @@ fn receive_byte(port: ComPortIo) -> u8 {
         unsafe { asm!("pause") }
     }
 
-    return inp8(base_addr);
+    inp8(base_addr)
 }
 
 /// Serial portwith 8 bit data, 1 stop bit, and no parity.
-pub struct ComPort {
+pub struct Uart {
     port: ComPortIo,
     kind: UartKind,
 }
 
-impl ComPort {
+impl Uart {
     pub fn new(port: ComPortIo, baud: BaudDivisor) -> Self {
         let kind = detect(port);
         if kind > UartKind::None {
@@ -297,7 +306,7 @@ impl ComPort {
     }
 }
 
-impl core::fmt::Write for ComPort {
+impl core::fmt::Write for Uart {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
         for byte in s.bytes() {
             self.send_byte(byte);
