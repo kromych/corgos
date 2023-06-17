@@ -23,12 +23,12 @@
     "pre-link-args": {
       "lld-link": [
         "/NOLOGO",
-        "/entry:uefi_main",
+        "/entry:efi_main",
         "/subsystem:efi_application"
       ],
       "msvc": [
         "/NOLOGO",
-        "/entry:uefi_main",
+        "/entry:efi_main",
         "/subsystem:efi_application"
       ]
     },

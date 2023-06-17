@@ -8,21 +8,19 @@ use core::panic::PanicInfo;
 
 use conquer_once::spin::OnceCell;
 use corg_uart::BaudDivisor;
-use corg_uart::ComPort;
 use corg_uart::ComPortIo;
+use corg_uart::Uart;
 use log::LevelFilter;
-use qemu_exit::QEMUExit;
-use raw_cpuid::CpuId;
 use spinning_top::Spinlock;
-use uefi::prelude::cstr16;
-use uefi::prelude::Boot;
-use uefi::prelude::SystemTable;
+use uefi::entry;
+use uefi::prelude::*;
 use uefi::proto::console::text::Output;
 use uefi::proto::media::file::File;
 use uefi::proto::media::file::FileAttribute;
 use uefi::proto::media::file::FileMode;
 use uefi::proto::media::fs::SimpleFileSystem;
 use uefi::table::runtime::ResetType;
+use uefi::table::Runtime;
 use uefi::CStr16;
 use uefi::Handle;
 use uefi::Status;
@@ -34,8 +32,8 @@ enum BootLoggerOutput {
 }
 
 struct SyncBootLogger {
-    stdout: Option<Spinlock<*mut Output<'static>>>,
-    serial: Option<Spinlock<ComPort>>,
+    stdout: Option<Spinlock<*mut Output>>,
+    serial: Option<Spinlock<Uart>>,
     output: BootLoggerOutput,
 }
 
@@ -59,7 +57,7 @@ impl SyncBootLogger {
     }
 
     fn log_to_serial(&mut self, port: ComPortIo, baud: BaudDivisor) {
-        let serial_port = ComPort::new(port, baud);
+        let serial_port = Uart::new(port, baud);
 
         self.serial = Some(Spinlock::new(serial_port));
         self.output = BootLoggerOutput::Serial;
@@ -125,6 +123,17 @@ enum LogDevice {
 struct LoaderConfig {
     log_device: LogDevice,
     log_level: LevelFilter,
+    wait_for_start: bool,
+}
+
+impl Default for LoaderConfig {
+    fn default() -> Self {
+        Self {
+            log_device: LogDevice::StdOut,
+            log_level: LevelFilter::Trace,
+            wait_for_start: false,
+        }
+    }
 }
 
 /// The name of the configuration file in the ESP partition alongside the loader.
@@ -141,10 +150,7 @@ const WATCHDOG_TIMEOUT_SECONDS: usize = 15;
 const WATCHDOG_TIMEOUT_CODE: u64 = CORGOS_BARF;
 
 fn parse_config(bytes: &[u8]) -> Option<LoaderConfig> {
-    let mut config = LoaderConfig {
-        log_device: LogDevice::StdOut,
-        log_level: LevelFilter::Info,
-    };
+    let mut config = LoaderConfig::default();
     let mut parser = corg_ini::Parser::new(bytes);
 
     while let Ok(Some(corg_ini::KeyValue { key, value })) = parser.parse() {
@@ -163,6 +169,9 @@ fn parse_config(bytes: &[u8]) -> Option<LoaderConfig> {
                 b"trace" => config.log_level = LevelFilter::Trace,
                 _ => continue,
             },
+            b"wait_for_start" => {
+                config.wait_for_start = value == b"yes" || value == b"on" || value == b"1"
+            }
             b"revision" => log::trace!("Revision '{}'", unsafe {
                 core::str::from_utf8_unchecked(value)
             }),
@@ -174,10 +183,7 @@ fn parse_config(bytes: &[u8]) -> Option<LoaderConfig> {
 }
 
 fn get_config(boot_system_table: &SystemTable<Boot>) -> LoaderConfig {
-    let mut config = LoaderConfig {
-        log_device: LogDevice::StdOut,
-        log_level: LevelFilter::Trace,
-    };
+    let mut config = LoaderConfig::default();
 
     let boot_system_table_unsafe_clone = unsafe { boot_system_table.unsafe_clone() };
     let boot_services = boot_system_table_unsafe_clone.boot_services();
@@ -218,53 +224,45 @@ fn setup_logger(boot_system_table: &mut SystemTable<Boot>, config: &LoaderConfig
     log::set_logger(logger).unwrap();
     log::set_max_level(config.log_level);
 
-    let com1 = ComPort::new(ComPortIo::Com1, BaudDivisor::Baud115200).kind();
-    let com2 = ComPort::new(ComPortIo::Com2, BaudDivisor::Baud115200).kind();
-    let com3 = ComPort::new(ComPortIo::Com3, BaudDivisor::Baud115200).kind();
-    let com4 = ComPort::new(ComPortIo::Com4, BaudDivisor::Baud115200).kind();
+    let com1 = Uart::new(ComPortIo::Com1, BaudDivisor::Baud115200).kind();
+    let com2 = Uart::new(ComPortIo::Com2, BaudDivisor::Baud115200).kind();
+    let com3 = Uart::new(ComPortIo::Com3, BaudDivisor::Baud115200).kind();
+    let com4 = Uart::new(ComPortIo::Com4, BaudDivisor::Baud115200).kind();
 
     log::trace!("{config:?}");
     log::trace!("com1 {com1:?}, com2 {com2:?}, com3 {com3:?}, com4 {com4:?}");
 }
 
-#[no_mangle]
-extern "efiapi" fn uefi_main(
-    image_handle: Handle,
-    mut boot_system_table: SystemTable<Boot>,
-) -> Status {
-    unsafe {
-        boot_system_table
-            .boot_services()
-            .set_image_handle(image_handle);
-    }
+fn report_boot_processor_info() {
+    #[cfg(target_arch = "x86_64")]
+    {
+        use raw_cpuid::CpuId;
 
-    //#[cfg(target_arch = "x86_64")]
-    //wait_for_start();
-    let config = get_config(&boot_system_table);
-    setup_logger(&mut boot_system_table, &config);
+        let cpuid = CpuId::new();
+        let cpu_vendor = cpuid
+            .get_vendor_info()
+            .expect("Must be able to get CPU vendor");
+        let brand_str = cpuid.get_processor_brand_string();
 
-    let cpuid = CpuId::new();
-    let cpu_vendor = cpuid
-        .get_vendor_info()
-        .expect("Must be able to get CPU vendor");
-    let brand_str = cpuid.get_processor_brand_string();
+        log::info!(
+            "Boot processor: {} {}",
+            cpu_vendor.as_str(),
+            if let Some(b) = &brand_str {
+                b.as_str()
+            } else {
+                ""
+            }
+        );
 
-    log::info!(
-        "Loading **CorgOS** on {} {}",
-        cpu_vendor.as_str(),
-        if let Some(b) = &brand_str {
-            b.as_str()
+        if let Some(hv_info) = cpuid.get_hypervisor_info() {
+            log::info!("Hypervisor detected: {:?}", hv_info.identify());
         } else {
-            ""
+            log::info!("No hypervisor detected (wasn't trying too hard though)");
         }
-    );
-
-    if let Some(hv_info) = cpuid.get_hypervisor_info() {
-        log::info!("Hypervisor detected: {:?}", hv_info.identify());
-    } else {
-        log::info!("No hypervisor detected (wasn't trying too hard though)");
     }
+}
 
+fn report_uefi_info(boot_system_table: &SystemTable<Boot>) {
     let fw_vendor = boot_system_table.firmware_vendor();
     let fw_revision = boot_system_table.firmware_revision();
     let uefi_revision = boot_system_table.uefi_revision();
@@ -273,25 +271,16 @@ extern "efiapi" fn uefi_main(
         fw_revision >> 16,
         fw_revision as u16
     );
+}
 
-    boot_system_table
-        .boot_services()
-        .set_watchdog_timer(WATCHDOG_TIMEOUT_SECONDS, WATCHDOG_TIMEOUT_CODE, None)
-        .unwrap();
-    log::info!(
-        "Exiting boot services; hit a key to reboot. Timeout {WATCHDOG_TIMEOUT_SECONDS} seconds"
-    );
-    boot_wait_for_key_press(&mut boot_system_table);
-
-    let mut mmap_buf = [0_u8; 8192];
-    let (runtime_system_table, _memory_map) = boot_system_table
-        .exit_boot_services(image_handle, &mut mmap_buf)
-        .unwrap();
-
-    unsafe {
-        runtime_system_table
-            .runtime_services()
-            .reset(ResetType::Warm, Status::ABORTED, None);
+fn arch_name() -> &'static str {
+    #[cfg(target_arch = "x86_64")]
+    {
+        "x86_64"
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        "aarch64"
     }
 }
 
@@ -309,33 +298,55 @@ fn boot_wait_for_key_press(boot_system_table: &mut SystemTable<Boot>) {
     }
 }
 
-#[cfg(target_arch = "x86_64")]
+fn reset(runtime_system_table: SystemTable<Runtime>) {
+    unsafe {
+        runtime_system_table
+            .runtime_services()
+            .reset(ResetType::WARM, Status::ABORTED, None);
+    }
+}
+
 #[allow(dead_code)]
 fn dead_loop() -> ! {
+    #[cfg(target_arch = "x86_64")]
     loop {
         unsafe {
             asm!("cli", "hlt", options(nomem, nostack));
         }
     }
+    #[cfg(target_arch = "aarch64")]
+    loop {
+        unsafe {
+            asm!("wfe", options(nomem, nostack));
+        }
+    }
 }
 
-#[cfg(target_arch = "x86_64")]
-#[allow(dead_code)]
-// Write 0 to R9 to break the loop.
+// Write 0 to R9(X9) to break the loop.
 fn wait_for_start() {
+    #[cfg(target_arch = "x86_64")]
     unsafe {
         asm!(
-            "1:     cmpq  %r9, 0",
+            "1:     cmpq    %r9, 0",
             "       pause",
-            "       jne 1b",
+            "       jne     1b",
             in("r9") 1,
             options(att_syntax, nostack),
+        );
+    }
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        asm!(
+            "1:     cmp     %x9, 0",
+            "       yield",
+            "       bne     1b",
+            in("x9") 1,
+            options(nostack),
         );
     }
 }
 
 #[panic_handler]
-#[cfg(target_arch = "x86_64")]
 fn panic(panic: &PanicInfo<'_>) -> ! {
     log::error!("{panic}");
 
@@ -348,25 +359,78 @@ fn panic(panic: &PanicInfo<'_>) -> ! {
         (0, 0)
     };
 
-    let qemu_exit_handle = qemu_exit::X86::new(0xf4, 0xf);
-    qemu_exit_handle.exit(_line_col as u32);
-
-    // On the real hardware, the qmeu exit shouldn't work.
+    // On the real hardware, the qemu exit shouldn't work.
     // Prob no harm.
+
+    #[cfg(target_arch = "x86_64")]
     #[allow(unreachable_code)]
-    loop {
-        unsafe {
-            asm!("cli", options(nomem, nostack));
-            asm!(
-                "hlt",
-                in("r8") CORGOS_BARF,
-                in("r9") _file_name_addr,
-                in("r10") _line_col,
-                options(att_syntax, nomem, nostack),
-            );
+    {
+        use qemu_exit::QEMUExit;
+
+        let qemu_exit_handle = qemu_exit::X86::new(0xf4, 0xf);
+        qemu_exit_handle.exit(_line_col as u32);
+
+        loop {
+            unsafe {
+                asm!("cli", options(nomem, nostack));
+                asm!(
+                    "hlt",
+                    in("r8") CORGOS_BARF,
+                    in("r9") _file_name_addr,
+                    in("r10") _line_col,
+                    options(att_syntax, nomem, nostack),
+                );
+            }
+        }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    #[allow(unreachable_code)]
+    {
+        // needs `-semihosting` on the qemu's command line.
+        let qemu_exit_handle = qemu_exit::AArch64::new();
+        qemu_exit_handle.exit(_line_col as u32);
+
+        loop {
+            unsafe {
+                asm!("wfe",
+                    in("x0") CORGOS_BARF,
+                    in("x1") _file_name_addr,
+                    in("x2") _line_col,
+                    options(nomem, nostack),
+                );
+            }
         }
     }
 }
 
 #[no_mangle]
 extern "efiapi" fn __chkstk() {}
+
+#[entry]
+fn main(image_handle: Handle, mut boot_system_table: SystemTable<Boot>) -> Status {
+    let config = get_config(&boot_system_table);
+    if config.wait_for_start {
+        wait_for_start();
+    }
+    setup_logger(&mut boot_system_table, &config);
+
+    log::info!("Loading **CorgOS/{}**", arch_name());
+    report_boot_processor_info();
+    report_uefi_info(&boot_system_table);
+
+    boot_system_table
+        .boot_services()
+        .set_watchdog_timer(WATCHDOG_TIMEOUT_SECONDS, WATCHDOG_TIMEOUT_CODE, None)
+        .unwrap();
+    log::info!(
+        "Exiting boot services; hit a key to reboot. Timeout {WATCHDOG_TIMEOUT_SECONDS} seconds"
+    );
+    boot_wait_for_key_press(&mut boot_system_table);
+
+    let (runtime_system_table, _memory_map) = boot_system_table.exit_boot_services();
+
+    reset(runtime_system_table);
+
+    Status::LOAD_ERROR
+}
