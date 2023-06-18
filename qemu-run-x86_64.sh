@@ -34,7 +34,7 @@ echo "wait_for_start = false" >> $BOOT_INI_FILE
 qemu-system-x86_64 \
     -nodefaults -s \
     -machine q35 -smp $NUM_PROC \
-    -m 64M \
+    -m 256M \
     -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
     -chardev file,id=fwdebug,path=fw.log \
     -device isa-debugcon,iobase=0x402,chardev=fwdebug \
