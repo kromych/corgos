@@ -120,13 +120,13 @@ enum LogDevice {
 }
 
 #[derive(Debug, Clone)]
-struct LoaderConfig {
+struct BootLoaderConfig {
     log_device: LogDevice,
     log_level: LevelFilter,
     wait_for_start: bool,
 }
 
-impl Default for LoaderConfig {
+impl Default for BootLoaderConfig {
     fn default() -> Self {
         Self {
             log_device: LogDevice::StdOut,
@@ -137,7 +137,10 @@ impl Default for LoaderConfig {
 }
 
 /// The name of the configuration file in the ESP partition alongside the loader.
-const CORGOS_INI: &CStr16 = cstr16!("corgos-boot.ini");
+#[cfg(target_arch = "x86_64")]
+const CORGOS_INI: &CStr16 = cstr16!("corgos-boot-x86_64.ini");
+#[cfg(target_arch = "aarch64")]
+const CORGOS_INI: &CStr16 = cstr16!("corgos-boot-aarch64.ini");
 
 /// Upon panic, b"CORGBARF" is loaded into R8. R9 contains the address of the file name,
 /// R10 contains the line number in the least significant 32 bits, and the column number
@@ -149,8 +152,8 @@ const CORGOS_BARF: u64 = u64::from_le_bytes([0x46, 0x52, 0x41, 0x42, 0x47, 0x52,
 const WATCHDOG_TIMEOUT_SECONDS: usize = 15;
 const WATCHDOG_TIMEOUT_CODE: u64 = CORGOS_BARF;
 
-fn parse_config(bytes: &[u8]) -> Option<LoaderConfig> {
-    let mut config = LoaderConfig::default();
+fn parse_config(bytes: &[u8]) -> Option<BootLoaderConfig> {
+    let mut config = BootLoaderConfig::default();
     let mut parser = corg_ini::Parser::new(bytes);
 
     while let Ok(Some(corg_ini::KeyValue { key, value })) = parser.parse() {
@@ -182,8 +185,8 @@ fn parse_config(bytes: &[u8]) -> Option<LoaderConfig> {
     Some(config)
 }
 
-fn get_config(boot_system_table: &SystemTable<Boot>) -> LoaderConfig {
-    let mut config = LoaderConfig::default();
+fn get_config(boot_system_table: &SystemTable<Boot>) -> BootLoaderConfig {
+    let mut config = BootLoaderConfig::default();
 
     let boot_system_table_unsafe_clone = unsafe { boot_system_table.unsafe_clone() };
     let boot_services = boot_system_table_unsafe_clone.boot_services();
@@ -210,7 +213,7 @@ fn get_config(boot_system_table: &SystemTable<Boot>) -> LoaderConfig {
 
 static BOOT_LOGGER: OnceCell<SyncBootLogger> = OnceCell::uninit();
 
-fn setup_logger(boot_system_table: &mut SystemTable<Boot>, config: &LoaderConfig) {
+fn setup_logger(boot_system_table: &mut SystemTable<Boot>, config: &BootLoaderConfig) {
     let logger = BOOT_LOGGER.get_or_init(move || {
         let mut logger = SyncBootLogger::new();
         match config.log_device {
@@ -327,9 +330,12 @@ fn wait_for_start() {
     #[cfg(target_arch = "x86_64")]
     unsafe {
         asm!(
-            "1:     cmpq    %r9, 0",
-            "       pause",
-            "       jne     1b",
+            r#"
+                1:
+                    cmpq    %r9, 0
+                    pause
+                    jne     1b
+            "#,
             in("r9") 1,
             options(att_syntax, nostack),
         );
@@ -337,9 +343,12 @@ fn wait_for_start() {
     #[cfg(target_arch = "aarch64")]
     unsafe {
         asm!(
-            "1:     cmp     %x9, 0",
-            "       yield",
-            "       bne     1b",
+            r#"
+            1:
+                    cmp     x9, 0
+                    yield
+                    bne     1b
+            "#,
             in("x9") 1,
             options(nostack),
         );
@@ -361,12 +370,11 @@ fn panic(panic: &PanicInfo<'_>) -> ! {
 
     // On the real hardware, the qemu exit shouldn't work.
     // Prob no harm.
+    use qemu_exit::QEMUExit;
 
     #[cfg(target_arch = "x86_64")]
     #[allow(unreachable_code)]
     {
-        use qemu_exit::QEMUExit;
-
         let qemu_exit_handle = qemu_exit::X86::new(0xf4, 0xf);
         qemu_exit_handle.exit(_line_col as u32);
 

@@ -97,35 +97,44 @@ pub enum BaudDivisor {
 
 #[inline]
 fn outp8(port: u16, val: u8) {
-    if cfg!(target_arch = "x86_64") {
+    #[cfg(target_arch = "x86_64")]
+    {
         unsafe {
             asm!("outb %al, %dx", in("al") val, in("dx") port, options(att_syntax, nostack, nomem));
         }
-    } else {
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
         let _ = (port, val);
     }
 }
 
 #[inline]
 fn outp16(port: u16, val: u16) {
-    if cfg!(target_arch = "x86_64") {
+    #[cfg(target_arch = "x86_64")]
+    {
         unsafe {
             asm!("outw %ax, %dx", in("ax") val, in("dx") port, options(att_syntax, nostack, nomem));
         }
-    } else {
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
         let _ = (port, val);
     }
 }
 
 #[inline]
 fn inp8(port: u16) -> u8 {
-    if cfg!(target_arch = "x86_64") {
+    #[cfg(target_arch = "x86_64")]
+    {
         let mut val;
         unsafe {
             asm!("inb %dx, %al", out("al") val, in("dx") port, options(att_syntax, nostack, nomem));
         }
         val
-    } else {
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
         let _ = port;
         0
     }
@@ -134,13 +143,16 @@ fn inp8(port: u16) -> u8 {
 #[inline]
 #[allow(dead_code)]
 fn inp16(port: u16) -> u16 {
-    if cfg!(target_arch = "x86_64") {
+    #[cfg(target_arch = "x86_64")]
+    {
         unsafe {
             let mut val;
             asm!("inw %dx, %ax", out("ax") val, in("dx") port, options(att_syntax, nostack, nomem));
             val
         }
-    } else {
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
         let _ = port;
         0
     }
@@ -251,7 +263,14 @@ fn send_byte(port: ComPortIo, byte: u8) {
     // Wait until Transmitter Holding Register is empty
     // (new data can be written to THR)
     while (inp8(lsr) & 0x20) == 0 {
-        unsafe { asm!("pause") }
+        #[cfg(target_arch = "x86_64")]
+        unsafe {
+            asm!("pause");
+        }
+        #[cfg(target_arch = "aarch64")]
+        unsafe {
+            asm!("brk #0x378");
+        }
     }
 
     outp8(base_addr, byte);
@@ -265,7 +284,14 @@ fn receive_byte(port: ComPortIo) -> u8 {
     // is set.
     // Could also analyze errors cominng from LSR.
     while (inp8(lsr) & 0x1) == 0 {
-        unsafe { asm!("pause") }
+        #[cfg(target_arch = "x86_64")]
+        unsafe {
+            asm!("pause");
+        }
+        #[cfg(target_arch = "aarch64")]
+        unsafe {
+            asm!("brk #0x379");
+        }
     }
 
     inp8(base_addr)

@@ -4,3 +4,10 @@ rustflags = [
     "-C", "relocation-model=static", 
     "-C", "code-model=small",
 ]
+
+[target.aarch64-boot]
+rustflags = [
+    "-C", "link-arg=/base:0",
+    "-C", "relocation-model=static", 
+    "-C", "code-model=small",
+]

@@ -15,7 +15,7 @@ EFI_DIR=$(PWD)/esp
 OVMF_DIR=$(PWD)/ovmf
 NUM_PROC=8
 REVISION=`git log -1 --oneline`
-BOOT_INI_FILE=$EFI_DIR/corgos-boot.ini
+BOOT_INI_FILE=$EFI_DIR/corgos-boot-x86_64.ini
 
 rm -rf $EFI_DIR
 rm -rf $OVMF_DIR
@@ -29,6 +29,7 @@ cp $BUILD_DIR/corgos-boot.efi $EFI_DIR/efi/boot/bootx64.efi
 echo "revision = \"$REVISION\"" > $BOOT_INI_FILE
 echo "log_device = com2" >> $BOOT_INI_FILE
 echo "log_level = trace" >> $BOOT_INI_FILE
+echo "wait_for_start = false" >> $BOOT_INI_FILE
 
 qemu-system-x86_64 \
     -nodefaults -s \
