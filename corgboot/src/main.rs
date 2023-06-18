@@ -8,10 +8,9 @@ use core::panic::PanicInfo;
 
 use conquer_once::spin::OnceCell;
 use corg_uart::BaudDivisor;
-use corg_uart::ComPortIo;
-use corg_uart::Uart;
+use corg_uart::ComPort;
+use corg_uart::Pl011;
 use log::LevelFilter;
-use spinning_top::Spinlock;
 use uefi::entry;
 use uefi::prelude::*;
 use uefi::proto::console::text::Output;
@@ -25,86 +24,83 @@ use uefi::CStr16;
 use uefi::Handle;
 use uefi::Status;
 
-enum BootLoggerOutput {
-    None,
-    Stdout,
-    Serial,
+enum LogOutput {
+    Stdout(*mut Output),
+    Com(ComPort),
+    Pl(Pl011),
 }
 
-struct SyncBootLogger {
-    stdout: Option<Spinlock<*mut Output>>,
-    serial: Option<Spinlock<Uart>>,
-    output: BootLoggerOutput,
-}
+/// Single-thread logger
+struct BootLogger(Option<LogOutput>);
 
-impl SyncBootLogger {
+impl BootLogger {
     fn new() -> Self {
-        Self {
-            stdout: None,
-            serial: None,
-            output: BootLoggerOutput::None,
-        }
+        Self(None)
     }
 
     fn log_to_stdout(&mut self, boot_system_table: &mut SystemTable<Boot>) {
         // TODO: rework this barf
         boot_system_table.stdout().clear().ok();
         let stdout = boot_system_table.stdout() as *mut Output as u64;
-        let stdout = stdout as *mut Output;
-
-        self.stdout = Some(Spinlock::new(stdout));
-        self.output = BootLoggerOutput::Stdout;
+        self.0 = Some(stdout as *mut Output);
     }
 
-    fn log_to_serial(&mut self, port: ComPortIo, baud: BaudDivisor) {
-        let serial_port = Uart::new(port, baud);
+    fn log_to_com_port(&mut self, port: ComPort, baud: BaudDivisor) {
+        self.0 = Some(ComPort::new(port, baud));
+    }
 
-        self.serial = Some(Spinlock::new(serial_port));
-        self.output = BootLoggerOutput::Serial;
+    fn log_to_pl011(&mut self, base_addr: u64) {
+        self.0 = Some(Pl011::new(base_addr));
     }
 }
 
-unsafe impl Send for SyncBootLogger {}
-unsafe impl Sync for SyncBootLogger {}
+unsafe impl Send for BootLogger {}
+unsafe impl Sync for BootLogger {}
 
-impl log::Log for SyncBootLogger {
+impl log::Log for BootLogger {
     fn enabled(&self, _metadata: &log::Metadata) -> bool {
         true
     }
 
     fn log(&self, record: &log::Record) {
-        match self.output {
-            BootLoggerOutput::None => {}
-            BootLoggerOutput::Stdout => {
-                if let Some(stdout) = &self.stdout {
-                    let stdout = stdout.lock();
-                    let stdout = unsafe { stdout.as_mut().unwrap() };
-                    writeln!(
-                        stdout,
-                        "[{:7}][{}:{}@{}]  {}",
-                        record.level(),
-                        record.module_path().unwrap_or_default(),
-                        record.file().unwrap_or_default(),
-                        record.line().unwrap_or_default(),
-                        record.args()
-                    )
-                    .ok();
-                }
+        match self {
+            None => {}
+            Some(LogOutput::Stdout(stdout)) => {
+                let stdout = unsafe { stdout.as_mut().unwrap() };
+                writeln!(
+                    stdout,
+                    "[{:7}][{}:{}@{}]  {}",
+                    record.level(),
+                    record.module_path().unwrap_or_default(),
+                    record.file().unwrap_or_default(),
+                    record.line().unwrap_or_default(),
+                    record.args()
+                )
+                .ok();
             }
-            BootLoggerOutput::Serial => {
-                if let Some(serial_port) = &self.serial {
-                    let mut serial_port = serial_port.lock();
-                    write!(
-                        serial_port,
-                        "[{:7}][{}:{}@{}]  {}\r\n",
-                        record.level(),
-                        record.module_path().unwrap_or_default(),
-                        record.file().unwrap_or_default(),
-                        record.line().unwrap_or_default(),
-                        record.args()
-                    )
-                    .ok();
-                }
+            Some(LogOutput::Com(serial_port)) => {
+                write!(
+                    serial_port,
+                    "[{:7}][{}:{}@{}]  {}\r\n",
+                    record.level(),
+                    record.module_path().unwrap_or_default(),
+                    record.file().unwrap_or_default(),
+                    record.line().unwrap_or_default(),
+                    record.args()
+                )
+                .ok();
+            }
+            Some(LogOutput::Pl(pl011_dev)) => {
+                write!(
+                    pl011_dev,
+                    "[{:7}][{}:{}@{}]  {}\r\n",
+                    record.level(),
+                    record.module_path().unwrap_or_default(),
+                    record.file().unwrap_or_default(),
+                    record.line().unwrap_or_default(),
+                    record.args()
+                )
+                .ok();
             }
         }
     }
@@ -117,6 +113,7 @@ enum LogDevice {
     StdOut,
     Com1,
     Com2,
+    Pl011(u64),
 }
 
 #[derive(Debug, Clone)]
@@ -162,6 +159,7 @@ fn parse_config(bytes: &[u8]) -> Option<BootLoaderConfig> {
                 b"com1" => config.log_device = LogDevice::Com1,
                 b"com2" => config.log_device = LogDevice::Com2,
                 b"stdout" => config.log_device = LogDevice::StdOut,
+                b"pl011" => config.log_device = LogDevice::Pl011(0x9000000), // TODO: parse base addr
                 _ => continue,
             },
             b"log_level" => match value {
@@ -211,29 +209,57 @@ fn get_config(boot_system_table: &SystemTable<Boot>) -> BootLoaderConfig {
     config
 }
 
-static BOOT_LOGGER: OnceCell<SyncBootLogger> = OnceCell::uninit();
+static BOOT_LOGGER: OnceCell<BootLogger> = OnceCell::uninit();
 
 fn setup_logger(boot_system_table: &mut SystemTable<Boot>, config: &BootLoaderConfig) {
     let logger = BOOT_LOGGER.get_or_init(move || {
-        let mut logger = SyncBootLogger::new();
+        let mut logger = BootLogger::new();
         match config.log_device {
             LogDevice::StdOut => logger.log_to_stdout(boot_system_table),
-            LogDevice::Com1 => logger.log_to_serial(ComPortIo::Com1, BaudDivisor::Baud115200),
-            LogDevice::Com2 => logger.log_to_serial(ComPortIo::Com2, BaudDivisor::Baud115200),
+            LogDevice::Com1 => {
+                #[cfg(target_arch = "x86_64")]
+                {
+                    logger.log_to_com_port(ComPort::Com1, BaudDivisor::Baud115200)
+                }
+
+                #[cfg(target_arch = "aarch64")]
+                {
+                    logger.log_to_stdout(boot_system_table)
+                }
+            }
+
+            LogDevice::Com2 => {
+                #[cfg(target_arch = "x86_64")]
+                {
+                    logger.log_to_com_port(ComPort::Com2, BaudDivisor::Baud115200)
+                }
+
+                #[cfg(target_arch = "aarch64")]
+                {
+                    logger.log_to_stdout(boot_system_table)
+                }
+            }
+
+            LogDevice::Pl011(base_addr) => {
+                #[cfg(target_arch = "x86_64")]
+                {
+                    logger.log_to_stdout(boot_system_table)
+                }
+
+                #[cfg(target_arch = "aarch64")]
+                {
+                    logger.log_to_pl011(base_addr)
+                }
+            }
         };
+
         logger
     });
 
     log::set_logger(logger).unwrap();
     log::set_max_level(config.log_level);
 
-    let com1 = Uart::new(ComPortIo::Com1, BaudDivisor::Baud115200).kind();
-    let com2 = Uart::new(ComPortIo::Com2, BaudDivisor::Baud115200).kind();
-    let com3 = Uart::new(ComPortIo::Com3, BaudDivisor::Baud115200).kind();
-    let com4 = Uart::new(ComPortIo::Com4, BaudDivisor::Baud115200).kind();
-
     log::trace!("{config:?}");
-    log::trace!("com1 {com1:?}, com2 {com2:?}, com3 {com3:?}, com4 {com4:?}");
 }
 
 fn report_boot_processor_info() {
