@@ -29,7 +29,7 @@ cp $OVMF_CODE $OVMF_DIR
 cp $OVMF_VARS $OVMF_DIR
 cp $BUILD_DIR/corgos-boot.efi $EFI_DIR/efi/boot/bootaa64.efi
 echo "revision = \"$REVISION\"" > $BOOT_INI_FILE
-echo "log_device = stdout" >> $BOOT_INI_FILE
+echo "log_device = \"pl011@9000000\"" >> $BOOT_INI_FILE
 echo "log_level = trace" >> $BOOT_INI_FILE
 echo "wait_for_start = false" >> $BOOT_INI_FILE
 
