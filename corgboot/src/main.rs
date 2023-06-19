@@ -105,6 +105,7 @@ struct BootLoaderConfig {
     log_device: LogDevice,
     log_level: LevelFilter,
     wait_for_start: bool,
+    watchdog_seconds: Option<usize>,
 }
 
 impl Default for BootLoaderConfig {
@@ -113,6 +114,7 @@ impl Default for BootLoaderConfig {
             log_device: LogDevice::StdOut,
             log_level: LevelFilter::Trace,
             wait_for_start: false,
+            watchdog_seconds: None,
         }
     }
 }
@@ -130,7 +132,6 @@ const CORGOS_INI: &CStr16 = cstr16!("corgos-boot-aarch64.ini");
 const CORGOS_BARF: u64 = u64::from_le_bytes([0x46, 0x52, 0x41, 0x42, 0x47, 0x52, 0x4f, 0x43]);
 
 /// Timeout for the boot services.
-const WATCHDOG_TIMEOUT_SECONDS: usize = 15;
 const WATCHDOG_TIMEOUT_CODE: u64 = CORGOS_BARF;
 
 fn parse_config(bytes: &[u8]) -> Option<BootLoaderConfig> {
@@ -172,6 +173,13 @@ fn parse_config(bytes: &[u8]) -> Option<BootLoaderConfig> {
             b"revision" => log::trace!("Revision '{}'", unsafe {
                 core::str::from_utf8_unchecked(value)
             }),
+            b"watchdog_seconds" => {
+                if let Ok(watchdog_seconds) =
+                    core::str::from_utf8(value).unwrap_or_default().parse()
+                {
+                    config.watchdog_seconds = Some(watchdog_seconds);
+                }
+            }
             _ => continue,
         }
     }
@@ -322,6 +330,7 @@ fn boot_wait_for_key_press(boot_system_table: &mut SystemTable<Boot>) {
     }
 }
 
+#[allow(dead_code)]
 fn reset(runtime_system_table: SystemTable<Runtime>) {
     unsafe {
         runtime_system_table
@@ -448,18 +457,26 @@ fn main(image_handle: Handle, mut boot_system_table: SystemTable<Boot>) -> Statu
     report_boot_processor_info();
     report_uefi_info(&boot_system_table);
 
-    boot_system_table
-        .boot_services()
-        .set_watchdog_timer(WATCHDOG_TIMEOUT_SECONDS, WATCHDOG_TIMEOUT_CODE, None)
-        .unwrap();
-    log::info!(
-        "Exiting boot services; hit a key to reboot. Timeout {WATCHDOG_TIMEOUT_SECONDS} seconds"
-    );
-    boot_wait_for_key_press(&mut boot_system_table);
+    if let Some(watchdog_seconds) = config.watchdog_seconds {
+        boot_system_table
+            .boot_services()
+            .set_watchdog_timer(watchdog_seconds, WATCHDOG_TIMEOUT_CODE, None)
+            .unwrap();
+        log::info!(
+            "Hit a key to exit loader, otherwise the system will reboot. Timeout {watchdog_seconds} seconds"
+        );
 
-    let (runtime_system_table, _memory_map) = boot_system_table.exit_boot_services();
+        boot_wait_for_key_press(&mut boot_system_table);
+        return Status::ABORTED;
+    }
 
-    reset(runtime_system_table);
+    let (_runtime_system_table, mut memory_map) = boot_system_table.exit_boot_services();
 
-    Status::LOAD_ERROR
+    memory_map.sort();
+    log::info!("Memory map has {} entries", memory_map.entries().len());
+    for entry in memory_map.entries() {
+        log::info!("Memory map: {entry:x?}")
+    }
+
+    panic!("Could not load the system");
 }
