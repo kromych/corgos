@@ -298,6 +298,7 @@ fn receive_byte(port: ComPortIo) -> u8 {
 }
 
 /// Serial portwith 8 bit data, 1 stop bit, and no parity.
+#[derive(Debug, Clone, Copy)]
 pub struct ComPort {
     port: ComPortIo,
     kind: UartKind,

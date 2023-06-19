@@ -9,8 +9,10 @@ use core::panic::PanicInfo;
 use conquer_once::spin::OnceCell;
 use corg_uart::BaudDivisor;
 use corg_uart::ComPort;
+use corg_uart::ComPortIo;
 use corg_uart::Pl011;
 use log::LevelFilter;
+use qemu_exit::QEMUExit;
 use uefi::entry;
 use uefi::prelude::*;
 use uefi::proto::console::text::Output;
@@ -24,6 +26,8 @@ use uefi::CStr16;
 use uefi::Handle;
 use uefi::Status;
 
+#[allow(dead_code)]
+#[derive(Debug)]
 enum LogOutput {
     Stdout(*mut Output),
     Com(ComPort),
@@ -31,28 +35,8 @@ enum LogOutput {
 }
 
 /// Single-thread logger
+#[derive(Debug)]
 struct BootLogger(Option<LogOutput>);
-
-impl BootLogger {
-    fn new() -> Self {
-        Self(None)
-    }
-
-    fn log_to_stdout(&mut self, boot_system_table: &mut SystemTable<Boot>) {
-        // TODO: rework this barf
-        boot_system_table.stdout().clear().ok();
-        let stdout = boot_system_table.stdout() as *mut Output as u64;
-        self.0 = Some(stdout as *mut Output);
-    }
-
-    fn log_to_com_port(&mut self, port: ComPort, baud: BaudDivisor) {
-        self.0 = Some(ComPort::new(port, baud));
-    }
-
-    fn log_to_pl011(&mut self, base_addr: u64) {
-        self.0 = Some(Pl011::new(base_addr));
-    }
-}
 
 unsafe impl Send for BootLogger {}
 unsafe impl Sync for BootLogger {}
@@ -63,7 +47,7 @@ impl log::Log for BootLogger {
     }
 
     fn log(&self, record: &log::Record) {
-        match self {
+        match &self.0 {
             None => {}
             Some(LogOutput::Stdout(stdout)) => {
                 let stdout = unsafe { stdout.as_mut().unwrap() };
@@ -78,7 +62,7 @@ impl log::Log for BootLogger {
                 )
                 .ok();
             }
-            Some(LogOutput::Com(serial_port)) => {
+            Some(LogOutput::Com(mut serial_port)) => {
                 write!(
                     serial_port,
                     "[{:7}][{}:{}@{}]  {}\r\n",
@@ -90,7 +74,7 @@ impl log::Log for BootLogger {
                 )
                 .ok();
             }
-            Some(LogOutput::Pl(pl011_dev)) => {
+            Some(LogOutput::Pl(mut pl011_dev)) => {
                 write!(
                     pl011_dev,
                     "[{:7}][{}:{}@{}]  {}\r\n",
@@ -110,6 +94,7 @@ impl log::Log for BootLogger {
 
 #[derive(Debug, Clone)]
 enum LogDevice {
+    Null,
     StdOut,
     Com1,
     Com2,
@@ -156,11 +141,20 @@ fn parse_config(bytes: &[u8]) -> Option<BootLoaderConfig> {
     while let Ok(Some(corg_ini::KeyValue { key, value })) = parser.parse() {
         match key {
             b"log_device" => match value {
+                b"null" => config.log_device = LogDevice::Null,
                 b"com1" => config.log_device = LogDevice::Com1,
                 b"com2" => config.log_device = LogDevice::Com2,
                 b"stdout" => config.log_device = LogDevice::StdOut,
-                b"pl011" => config.log_device = LogDevice::Pl011(0x9000000), // TODO: parse base addr
-                _ => continue,
+                _ => {
+                    if value.starts_with(b"pl011@") {
+                        let mut base_addr = [0u8; 8];
+                        if hex::decode_to_slice(&value[b"pl011@".len()..], &mut base_addr).is_ok() {
+                            config.log_device = LogDevice::Pl011(u64::from_le_bytes(base_addr))
+                        } else {
+                            config.log_device = LogDevice::StdOut
+                        }
+                    }
+                }
             },
             b"log_level" => match value {
                 b"info" => config.log_level = LevelFilter::Info,
@@ -212,54 +206,53 @@ fn get_config(boot_system_table: &SystemTable<Boot>) -> BootLoaderConfig {
 static BOOT_LOGGER: OnceCell<BootLogger> = OnceCell::uninit();
 
 fn setup_logger(boot_system_table: &mut SystemTable<Boot>, config: &BootLoaderConfig) {
+    let mut stdout_logger = || {
+        // TODO: rework this barf
+        boot_system_table.stdout().clear().ok();
+        let stdout = boot_system_table.stdout() as *mut Output as u64;
+        Some(LogOutput::Stdout(stdout as *mut Output))
+    };
+
     let logger = BOOT_LOGGER.get_or_init(move || {
-        let mut logger = BootLogger::new();
-        match config.log_device {
-            LogDevice::StdOut => logger.log_to_stdout(boot_system_table),
+        let output = match config.log_device {
+            LogDevice::StdOut => stdout_logger(),
             LogDevice::Com1 => {
-                #[cfg(target_arch = "x86_64")]
-                {
-                    logger.log_to_com_port(ComPort::Com1, BaudDivisor::Baud115200)
-                }
-
-                #[cfg(target_arch = "aarch64")]
-                {
-                    logger.log_to_stdout(boot_system_table)
+                if cfg!(target_arch = "x86_64") {
+                    Some(LogOutput::Com(ComPort::new(
+                        ComPortIo::Com1,
+                        BaudDivisor::Baud115200,
+                    )))
+                } else {
+                    stdout_logger()
                 }
             }
-
             LogDevice::Com2 => {
-                #[cfg(target_arch = "x86_64")]
-                {
-                    logger.log_to_com_port(ComPort::Com2, BaudDivisor::Baud115200)
-                }
-
-                #[cfg(target_arch = "aarch64")]
-                {
-                    logger.log_to_stdout(boot_system_table)
+                if cfg!(target_arch = "x86_64") {
+                    Some(LogOutput::Com(ComPort::new(
+                        ComPortIo::Com2,
+                        BaudDivisor::Baud115200,
+                    )))
+                } else {
+                    stdout_logger()
                 }
             }
-
             LogDevice::Pl011(base_addr) => {
-                #[cfg(target_arch = "x86_64")]
-                {
-                    logger.log_to_stdout(boot_system_table)
-                }
-
-                #[cfg(target_arch = "aarch64")]
-                {
-                    logger.log_to_pl011(base_addr)
+                if cfg!(target_arch = "aarch64") {
+                    Some(LogOutput::Pl(Pl011::new(base_addr)))
+                } else {
+                    stdout_logger()
                 }
             }
+            LogDevice::Null => None,
         };
 
-        logger
+        BootLogger(output)
     });
 
     log::set_logger(logger).unwrap();
     log::set_max_level(config.log_level);
 
-    log::trace!("{config:?}");
+    log::trace!("{config:x?}, {logger:x?}");
 }
 
 fn report_boot_processor_info() {
