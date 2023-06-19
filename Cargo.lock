@@ -51,7 +51,6 @@ dependencies = [
  "corg-ini",
  "corg-uart",
  "elf",
- "hex",
  "log",
  "qemu-exit",
  "raw-cpuid",
@@ -64,12 +63,6 @@ name = "elf"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2b183d6ce6ca4cf30e3db37abf5b52568b5f9015c97d9fbdd7026aa5dcdd758"
-
-[[package]]
-name = "hex"
-version = "0.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
 name = "lock_api"

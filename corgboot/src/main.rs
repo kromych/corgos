@@ -12,7 +12,6 @@ use corg_uart::ComPort;
 use corg_uart::ComPortIo;
 use corg_uart::Pl011;
 use log::LevelFilter;
-use qemu_exit::QEMUExit;
 use uefi::entry;
 use uefi::prelude::*;
 use uefi::proto::console::text::Output;
@@ -146,10 +145,13 @@ fn parse_config(bytes: &[u8]) -> Option<BootLoaderConfig> {
                 b"com2" => config.log_device = LogDevice::Com2,
                 b"stdout" => config.log_device = LogDevice::StdOut,
                 _ => {
+                    // TODO: must be Device Tree or ACPI
                     if value.starts_with(b"pl011@") {
-                        let mut base_addr = [0u8; 8];
-                        if hex::decode_to_slice(&value[b"pl011@".len()..], &mut base_addr).is_ok() {
-                            config.log_device = LogDevice::Pl011(u64::from_le_bytes(base_addr))
+                        if let Ok(base_addr) = u64::from_str_radix(
+                            core::str::from_utf8(&value[b"pl011@".len()..]).unwrap_or_default(),
+                            16,
+                        ) {
+                            config.log_device = LogDevice::Pl011(base_addr)
                         } else {
                             config.log_device = LogDevice::StdOut
                         }

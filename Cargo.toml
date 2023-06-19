@@ -9,7 +9,6 @@ members = [
 [workspace.dependencies]
 conquer-once = { version = "0.4", default-features = false }
 elf = { version = "0.7", default-features = false }
-hex = { version = "0.4", default-features = false }
 log = { version = "0.4", default-features = false }
 qemu-exit = { version = "3", default-features = false }
 raw-cpuid = { version = "11", default-features = false }
