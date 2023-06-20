@@ -8,13 +8,13 @@
 #C-a c    switch between console and monitor
 #C-a C-a  sends C-a
 
-$SILENT="silent-"
+SILENT="silent-"
 
-OVMF_CODE=$(PWD)/edk2-uefi/aarch64/QEMU_EFI-$(SILENT)pflash.raw
-OVMF_VARS=$(PWD)/edk2-uefi/aarch64/vars-template-pflash.raw
-BUILD_DIR=$(PWD)/target/aarch64-boot/release
-EFI_DIR=$(PWD)/esp
-OVMF_DIR=$(PWD)/ovmf
+OVMF_CODE=${PWD}/edk2-uefi/aarch64/QEMU_EFI-${SILENT}pflash.raw
+OVMF_VARS=${PWD}/edk2-uefi/aarch64/vars-template-pflash.raw
+BUILD_DIR=${PWD}/target/aarch64-boot/release
+EFI_DIR=${PWD}/esp
+OVMF_DIR=${PWD}/ovmf
 NUM_PROC=8
 REVISION=`git log -1 --oneline`
 BOOT_INI_FILE=$EFI_DIR/corgos-boot-aarch64.ini
@@ -39,7 +39,7 @@ qemu-system-aarch64 \
     -machine virt -smp $NUM_PROC \
     -m 256M \
     --semihosting \
-    -drive if=pflash,format=raw,file=$OVMF_DIR/QEMU_EFI-$(SILENT)pflash.raw,readonly=on \
+    -drive if=pflash,format=raw,file=$OVMF_DIR/QEMU_EFI-${SILENT}pflash.raw,readonly=on \
     -drive if=pflash,format=raw,file=$OVMF_DIR/vars-template-pflash.raw \
     -drive format=raw,file=fat:rw:$EFI_DIR \
     -chardev stdio,id=char0,mux=on,logfile=serial1.log,signal=off \

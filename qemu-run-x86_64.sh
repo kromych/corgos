@@ -8,11 +8,11 @@
 #C-a c    switch between console and monitor
 #C-a C-a  sends C-a
 
-OVMF_CODE=$(PWD)/edk2-uefi/ovmf-x64-4m/OVMF_CODE.fd
-OVMF_VARS=$(PWD)/edk2-uefi/ovmf-x64-4m/OVMF_VARS.fd
-BUILD_DIR=$(PWD)/target/x86_64-boot/release
-EFI_DIR=$(PWD)/esp
-OVMF_DIR=$(PWD)/ovmf
+OVMF_CODE=${PWD}/edk2-uefi/ovmf-x64-4m/OVMF_CODE.fd
+OVMF_VARS=${PWD}/edk2-uefi/ovmf-x64-4m/OVMF_VARS.fd
+BUILD_DIR=${PWD}/target/x86_64-boot/release
+EFI_DIR=${PWD}/esp
+OVMF_DIR=${PWD}/ovmf
 NUM_PROC=8
 REVISION=`git log -1 --oneline`
 BOOT_INI_FILE=$EFI_DIR/corgos-boot-x86_64.ini
