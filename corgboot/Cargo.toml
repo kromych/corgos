@@ -7,11 +7,14 @@ edition = "2021"
 [dependencies]
 uefi.workspace = true
 log.workspace = true
-raw-cpuid.workspace = true
 elf.workspace = true
 spinning_top.workspace = true
 conquer-once.workspace = true
 qemu-exit.workspace = true
+
+raw-cpuid.workspace = true
+tock-registers.workspace = true
+aarch64-cpu.workspace = true
 
 corg-ini.workspace = true
 corg-uart.workspace = true

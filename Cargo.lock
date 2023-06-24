@@ -3,6 +3,15 @@
 version = 3
 
 [[package]]
+name = "aarch64-cpu"
+version = "9.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eb711c57d60565ba8f6523eb371e6243639617d817b4df1ae09af250af1af411"
+dependencies = [
+ "tock-registers",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -47,6 +56,7 @@ version = "0.1.0"
 name = "corgos-boot"
 version = "0.1.0"
 dependencies = [
+ "aarch64-cpu",
  "conquer-once",
  "corg-ini",
  "corg-uart",
@@ -55,6 +65,7 @@ dependencies = [
  "qemu-exit",
  "raw-cpuid",
  "spinning_top",
+ "tock-registers",
  "uefi",
 ]
 
@@ -169,6 +180,12 @@ dependencies = [
  "quote",
  "unicode-ident",
 ]
+
+[[package]]
+name = "tock-registers"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "696941a0aee7e276a165a978b37918fd5d22c55c3d6bda197813070ca9c0f21c"
 
 [[package]]
 name = "ucs2"

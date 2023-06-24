@@ -15,5 +15,8 @@ raw-cpuid = { version = "11", default-features = false }
 spinning_top = "0.2"
 uefi = { version = "0.23", default-features = false }
 
+tock-registers = { version = "0.8", default-features = false }
+aarch64-cpu = "9.3"
+
 corg-ini = { path = "corgini" }
 corg-uart = { path = "corguart" }

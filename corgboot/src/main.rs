@@ -292,6 +292,33 @@ fn report_boot_processor_info() {
             log::info!("No hypervisor detected (wasn't trying too hard though)");
         }
     }
+    #[cfg(target_arch = "aarch64")]
+    {
+        use aarch64_cpu::registers::*;
+        use tock_registers::interfaces::Readable;
+
+        let current_el = CurrentEL.get();
+        let sctlr_el1 = SCTLR_EL1.get();
+        let vbar_el1 = VBAR_EL1.get();
+        let mair_el1 = MAIR_EL1.get();
+        let tcr_el1 = TCR_EL1.get();
+        let ttbr0_el1 = TTBR0_EL1.get();
+        let ttbr1_el1 = TTBR1_EL1.get();
+        let elr_el1 = ELR_EL1.get();
+        let esr_el1 = ESR_EL1.get();
+        let spsr_el1 = SPSR_EL1.get();
+
+        log::info!("CurrentEL\t{current_el:064b}");
+        log::info!("SCTLR_EL1\t{sctlr_el1:064b}");
+        log::info!("VBAR_EL1\t{vbar_el1:064b}");
+        log::info!("MAIR_EL1\t{mair_el1:064b}");
+        log::info!("TCR_EL1\t{tcr_el1:064b}");
+        log::info!("TTBR0_EL1\t{ttbr0_el1:064b}");
+        log::info!("TTBR1_EL1\t{ttbr1_el1:064b}");
+        log::info!("ELR_EL1\t{elr_el1:064b}");
+        log::info!("ESR_EL1\t{esr_el1:064b}");
+        log::info!("SPSR_EL1\t{spsr_el1:064b}");
+    }
 }
 
 fn report_uefi_info(boot_system_table: &SystemTable<Boot>) {
