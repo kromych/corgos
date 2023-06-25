@@ -301,27 +301,33 @@ fn report_boot_processor_info() {
         use aarch64_cpu::registers::*;
         use tock_registers::interfaces::Readable;
 
-        let current_el = CurrentElVal::from(CurrentEL.get());
-        let sctlr_el1 = SCTLR_EL1.get();
-        let vbar_el1 = VBAR_EL1.get();
-        let mair_el1 = MAIR_EL1.get();
-        let tcr_el1 = TCR_EL1.get();
-        let ttbr0_el1 = TTBR0_EL1.get();
-        let ttbr1_el1 = TTBR1_EL1.get();
+        let current_el = CurrentElVal::from(CurrentEL.get()).el();
+        let sctlr_el1 = SystemControlEl1Val::from(SCTLR_EL1.get());
+        let vbar_el1 = VectorBaseEl1Val::from(VBAR_EL1.get()).vbar();
+        let mair_el1 = MemoryAttributeIndirectionEl1Val::from(MAIR_EL1.get());
+        let tcr_el1 = TranslationControlEl1Val::from(TCR_EL1.get());
+        let ttbr0_el1 = TranslationBaseEl1Val::from(TTBR0_EL1.get());
+        let ttbr1_el1 = TranslationBaseEl1Val::from(TTBR1_EL1.get());
+        let id_aa64mmfr0_el1 = ID_AA64MMFR0_EL1.get();
         let elr_el1 = ELR_EL1.get();
         let esr_el1 = ESR_EL1.get();
         let spsr_el1 = SPSR_EL1.get();
 
         log::info!("CurrentEL\t{current_el:?}");
-        log::info!("SCTLR_EL1\t{sctlr_el1:064b}");
-        log::info!("VBAR_EL1\t{vbar_el1:064b}");
-        log::info!("MAIR_EL1\t{mair_el1:064b}");
-        log::info!("TCR_EL1\t{tcr_el1:064b}");
-        log::info!("TTBR0_EL1\t{ttbr0_el1:064b}");
-        log::info!("TTBR1_EL1\t{ttbr1_el1:064b}");
-        log::info!("ELR_EL1\t{elr_el1:064b}");
-        log::info!("ESR_EL1\t{esr_el1:064b}");
+        log::info!("SCTLR_EL1\t{sctlr_el1:?}");
+        log::info!("VBAR_EL1\t{vbar_el1:#x?}");
+        log::info!("MAIR_EL1\t{mair_el1:x?}");
+        log::info!("TCR_EL1\t{tcr_el1:?}");
+        log::info!("TTBR0_EL1\t{ttbr0_el1:x?}");
+        log::info!("TTBR1_EL1\t{ttbr1_el1:x?}");
+        log::info!("ID_AA64MMFR0_EL1\t{id_aa64mmfr0_el1:x?}");
+        log::info!("ELR_EL1\t{elr_el1:#016x}");
+        log::info!("ESR_EL1\t{esr_el1:#016x}");
         log::info!("SPSR_EL1\t{spsr_el1:064b}");
+
+        let l0 = unsafe { core::slice::from_raw_parts(ttbr0_el1.baddr() as *const u64, 512) };
+        let l0 = &l0[..8];
+        log::info!("some PTEs {l0:016x?}");
     }
 }
 
