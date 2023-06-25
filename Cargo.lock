@@ -24,6 +24,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc827186963e592360843fb5ba4b973e145841266c1357f7180c43526f2e5b61"
 
 [[package]]
+name = "bitfield-struct"
+version = "0.4.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0526e3752c9058af187599111a39eff3669ff8cc775063cf94709db66f0afcac"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.18",
+]
+
+[[package]]
 name = "bitflags"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -57,6 +68,7 @@ name = "corgos-boot"
 version = "0.1.0"
 dependencies = [
  "aarch64-cpu",
+ "bitfield-struct",
  "conquer-once",
  "corg-ini",
  "corg-uart",

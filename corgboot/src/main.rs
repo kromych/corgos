@@ -2,6 +2,9 @@
 #![no_main]
 #![deny(unsafe_op_in_unsafe_fn)]
 
+#[cfg(target_arch = "aarch64")]
+mod aarch64_regs;
+
 use core::arch::asm;
 use core::fmt::Write;
 use core::panic::PanicInfo;
@@ -294,10 +297,11 @@ fn report_boot_processor_info() {
     }
     #[cfg(target_arch = "aarch64")]
     {
+        use crate::aarch64_regs::*;
         use aarch64_cpu::registers::*;
         use tock_registers::interfaces::Readable;
 
-        let current_el = CurrentEL.get();
+        let current_el = CurrentElVal::from(CurrentEL.get());
         let sctlr_el1 = SCTLR_EL1.get();
         let vbar_el1 = VBAR_EL1.get();
         let mair_el1 = MAIR_EL1.get();
@@ -308,7 +312,7 @@ fn report_boot_processor_info() {
         let esr_el1 = ESR_EL1.get();
         let spsr_el1 = SPSR_EL1.get();
 
-        log::info!("CurrentEL\t{current_el:064b}");
+        log::info!("CurrentEL\t{current_el:?}");
         log::info!("SCTLR_EL1\t{sctlr_el1:064b}");
         log::info!("VBAR_EL1\t{vbar_el1:064b}");
         log::info!("MAIR_EL1\t{mair_el1:064b}");
