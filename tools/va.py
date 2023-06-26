@@ -30,5 +30,4 @@ if __name__ == "__main__":
     for va in args:
         va = int(eval(va))
         va4 = VirtAddr(va)
-        print(hex(va), va4)
-    
+        print(f"0x{va:016x} =", va4)
