@@ -334,9 +334,50 @@ fn report_boot_processor_info() {
         log::info!("ESR_EL1\t{esr_el1_raw:#016x?}");
         log::info!("SPSR_EL1\t{spsr_el1_raw:#016x?}");
 
-        let l0 = unsafe { core::slice::from_raw_parts(ttbr0_el1.baddr() as *const u64, 512) };
-        let l0 = &l0[..8];
-        log::info!("some PTEs {l0:016x?}");
+        let mut dfs_stack = [(0u64, 0u64); 512];
+        let mut dfs_stack_top = 0;
+        dfs_stack[dfs_stack_top] = (0, ttbr0_el1.baddr() | 0b11);
+        dfs_stack_top += 1;
+
+        while dfs_stack_top > 0 {
+            dfs_stack_top -= 1;
+            let (level, entry) = dfs_stack[dfs_stack_top];
+
+            if entry & 1 == 0 {
+                // Not valid for hardware, skip. In general, might be valid when an OS is running
+                // for software PTEs and swapping.
+                continue;
+            }
+
+            assert!(entry & 0b11 == 0b11);
+
+            // This a table pointer.
+            let entry = PageTableEntry::from(entry);
+            log::info!("{entry:x?}");
+
+            // Assuming 4K pages (check TCR!)
+            let next_table_entries = unsafe {
+                core::slice::from_raw_parts((entry.next_table_pfn() << 12) as *const u64, 512)
+            };
+
+            for &entry in next_table_entries.iter().rev() {
+                if level >= 3 {
+                    // This is a block pointer (a leaf).
+                    let entry = PageBlockEntry::from(entry);
+                    log::info!("{entry:x?}");
+                    continue;
+                }
+
+                if entry & 0b11 == 0b11 {
+                    dfs_stack[dfs_stack_top] = (level + 1, entry);
+                    dfs_stack_top += 1;
+                } else if entry & 1 == 1 {
+                    // This is a block pointer (a leaf).
+                    let entry = PageBlockEntry::from(entry);
+                    log::info!("{entry:x?}");
+                }
+            }
+        }
     }
 }
 

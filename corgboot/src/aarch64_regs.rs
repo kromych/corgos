@@ -618,3 +618,57 @@ pub struct MmuFeatures0El1Val {
     #[bits(4)]
     pub ecv: u64,
 }
+
+#[bitfield(u64)]
+pub struct PageTableEntry {
+    pub valid: bool,
+    pub table: bool, // Use PageBlockEntry if `false`
+    #[bits(10)]
+    _mbz0: u64,
+    #[bits(35)]
+    pub next_table_pfn: u64,
+    #[bits(12)]
+    _mbz1: u64,
+    pub priv_x_never: bool,
+    pub user_x_never: bool,
+    // NoEffect = 0b00,
+    // PrivOnly = 0b01,
+    // ReadOnly = 0b10,
+    // PrivReadOnly = 0b11
+    #[bits(2)]
+    pub access_perm: u64,
+    pub non_secure: bool,
+}
+
+#[bitfield(u64)]
+pub struct PageBlockEntry {
+    pub valid: bool,
+    pub page: bool,
+    #[bits(3)]
+    pub mair_idx: u64,
+    #[bits(1)]
+    _mbz0: u64,
+    // PrivOnly = 0b00,
+    // ReadWrite = 0b01,
+    // PrivReadOnly = 0b10,
+    // ReadOnly = 0b11
+    #[bits(2)]
+    pub access_perm: u64,
+    // NonShareable = 0b00,
+    // OuterShareable = 0b10,
+    // InnerShareable = 0b11
+    #[bits(2)]
+    pub share_perm: u64,
+    pub accessed: bool,
+    pub not_global: bool,
+    #[bits(35)]
+    pub address_pfn: u64,
+    #[bits(4)]
+    _mbz1: u64,
+    pub dirty: bool,
+    pub contig: bool,
+    pub priv_x_never: bool,
+    pub user_x_never: bool,
+    #[bits(9)]
+    _mbz2: u64,
+}
