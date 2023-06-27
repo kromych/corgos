@@ -321,6 +321,7 @@ fn report_boot_processor_info() {
         let ttbr0_el1 = TranslationBaseEl1Val::from(ttbr0_el1_raw);
         let ttbr1_el1 = TranslationBaseEl1Val::from(ttbr1_el1_raw);
         let id_aa64mmfr0_el1 = MmuFeatures0El1Val::from(id_aa64mmfr0_el1_raw);
+        let spsr_el1 = SavedProgramState::from(spsr_el1_raw);
 
         log::info!("CurrentEL\t{current_el_raw:#016x?}: {current_el:?}");
         log::info!("SCTLR_EL1\t{sctlr_el1_raw:#016x?}: {sctlr_el1:?}");
@@ -332,7 +333,7 @@ fn report_boot_processor_info() {
         log::info!("AA64MMFR0_EL1\t{id_aa64mmfr0_el1_raw:#016x?}: {id_aa64mmfr0_el1:?}");
         log::info!("ELR_EL1\t{elr_el1_raw:#016x?}");
         log::info!("ESR_EL1\t{esr_el1_raw:#016x?}");
-        log::info!("SPSR_EL1\t{spsr_el1_raw:#016x?}");
+        log::info!("SPSR_EL1\t{spsr_el1_raw:#016x?}: {spsr_el1:?}");
 
         let mut dfs_stack = [(0u64, 0u64); 512];
         let mut dfs_stack_top = 0;

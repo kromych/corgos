@@ -167,6 +167,55 @@ pub struct VectorBaseEl1Val {
     pub vbar: u64,
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[repr(u64)]
+pub enum SavedProgramStateMode {
+    EL0t = 0b0000,
+    EL1t = 0b0100,
+    EL1h = 0b0101,
+    EL2t = 0b1000,
+    EL2h = 0b1001,
+    EL3t = 0b1100,
+    EL3h = 0b1101,
+}
+
+impl From<SavedProgramStateMode> for u64 {
+    fn from(value: SavedProgramStateMode) -> Self {
+        value as u64
+    }
+}
+
+impl From<u64> for SavedProgramStateMode {
+    fn from(value: u64) -> Self {
+        match value {
+            0b0000 => SavedProgramStateMode::EL0t,
+            0b0100 => SavedProgramStateMode::EL1t,
+            0b0101 => SavedProgramStateMode::EL1h,
+            0b1000 => SavedProgramStateMode::EL2t,
+            0b1001 => SavedProgramStateMode::EL2h,
+            0b1100 => SavedProgramStateMode::EL3t,
+            0b1101 => SavedProgramStateMode::EL3h,
+            _ => panic!("illegal saved program state mode"),
+        }
+    }
+}
+
+#[bitfield(u64)]
+#[derive(PartialEq, Eq)]
+pub struct SavedProgramState {
+    #[bits(4)]
+    pub mode: SavedProgramStateMode,
+    pub aarch32: bool,
+    #[bits(1)]
+    _mbz0: u64,
+    pub f: bool,
+    pub i: bool,
+    pub a: bool,
+    pub d: bool,
+    #[bits(54)]
+    _rest: u64,
+}
+
 #[derive(Debug)]
 pub struct MemoryAttributeIndirectionEl1Val([u8; 8]);
 
