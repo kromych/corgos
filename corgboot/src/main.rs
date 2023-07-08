@@ -108,6 +108,7 @@ struct BootLoaderConfig {
     log_device: LogDevice,
     log_level: LevelFilter,
     wait_for_start: bool,
+    walk_page_tables: bool,
     watchdog_seconds: Option<usize>,
 }
 
@@ -117,6 +118,7 @@ impl Default for BootLoaderConfig {
             log_device: LogDevice::StdOut,
             log_level: LevelFilter::Trace,
             wait_for_start: false,
+            walk_page_tables: false,
             watchdog_seconds: None,
         }
     }
@@ -172,6 +174,9 @@ fn parse_config(bytes: &[u8]) -> Option<BootLoaderConfig> {
             },
             b"wait_for_start" => {
                 config.wait_for_start = value == b"yes" || value == b"on" || value == b"1"
+            }
+            b"walk_page_tables" => {
+                config.walk_page_tables = value == b"yes" || value == b"on" || value == b"1"
             }
             b"revision" => log::trace!("Revision '{}'", unsafe {
                 core::str::from_utf8_unchecked(value)
@@ -295,45 +300,65 @@ fn report_boot_processor_info() {
             log::info!("No hypervisor detected (wasn't trying too hard though)");
         }
     }
+
     #[cfg(target_arch = "aarch64")]
     {
+        use crate::aarch64_regs::access::Aarch64Register;
         use crate::aarch64_regs::*;
-        use aarch64_cpu::registers::*;
-        use tock_registers::interfaces::Readable;
 
-        let current_el_raw = CurrentEL.get();
-        let sctlr_el1_raw = SCTLR_EL1.get();
-        let vbar_el1_raw = VBAR_EL1.get();
-        let mair_el1_raw = MAIR_EL1.get();
-        let tcr_el1_raw = TCR_EL1.get();
-        let ttbr0_el1_raw = TTBR0_EL1.get();
-        let ttbr1_el1_raw = TTBR1_EL1.get();
-        let id_aa64mmfr0_el1_raw = ID_AA64MMFR0_EL1.get();
-        let elr_el1_raw = ELR_EL1.get();
-        let esr_el1_raw = ESR_EL1.get();
-        let spsr_el1_raw = SPSR_EL1.get();
+        let regs = [
+            register!(MainIdEl1),
+            register!(ProcessorFeatures0El1),
+            register!(ProcessorFeatures1El1),
+            register!(MmFeatures0El1),
+            register!(MmFeatures1El1),
+            register!(MmFeatures2El1),
+            register!(MmFeatures3El1),
+            register!(MmFeatures4El1),
+            register!(CurrentEl),
+            register!(SystemControlEl1),
+            register!(VectorBaseEl1),
+            register!(MemoryAttributeIndirectionEl1),
+            register!(TranslationControlEl1),
+            register!(TranslationBase0El1),
+            register!(TranslationBase1El1),
+            register!(ExceptionLinkEl1),
+            register!(ExceptionSyndromeEl1),
+            register!(SavedProgramStateEl1),
+        ];
 
-        let current_el = CurrentElVal::from(current_el_raw).el();
-        let sctlr_el1 = SystemControlEl1Val::from(sctlr_el1_raw);
-        let vbar_el1 = VectorBaseEl1Val::from(vbar_el1_raw).vbar();
-        let mair_el1 = MemoryAttributeIndirectionEl1Val::from(mair_el1_raw);
-        let tcr_el1 = TranslationControlEl1Val::from(tcr_el1_raw);
-        let ttbr0_el1 = TranslationBaseEl1Val::from(ttbr0_el1_raw);
-        let ttbr1_el1 = TranslationBaseEl1Val::from(ttbr1_el1_raw);
-        let id_aa64mmfr0_el1 = MmuFeatures0El1Val::from(id_aa64mmfr0_el1_raw);
-        let spsr_el1 = SavedProgramState::from(spsr_el1_raw);
+        for r in regs {
+            r.load();
 
-        log::info!("CurrentEL\t{current_el_raw:#016x?}: {current_el:?}");
-        log::info!("SCTLR_EL1\t{sctlr_el1_raw:#016x?}: {sctlr_el1:?}");
-        log::info!("VBAR_EL1\t{vbar_el1_raw:#016x?}: {vbar_el1:#x?}");
-        log::info!("MAIR_EL1\t{mair_el1_raw:#016x?}: {mair_el1:x?}");
-        log::info!("TCR_EL1\t{tcr_el1_raw:#016x?}: {tcr_el1:?}");
-        log::info!("TTBR0_EL1\t{ttbr0_el1_raw:#016x?}: {ttbr0_el1:x?}");
-        log::info!("TTBR1_EL1\t{ttbr1_el1_raw:#016x?}: {ttbr1_el1:x?}");
-        log::info!("AA64MMFR0_EL1\t{id_aa64mmfr0_el1_raw:#016x?}: {id_aa64mmfr0_el1:?}");
-        log::info!("ELR_EL1\t{elr_el1_raw:#016x?}");
-        log::info!("ESR_EL1\t{esr_el1_raw:#016x?}");
-        log::info!("SPSR_EL1\t{spsr_el1_raw:#016x?}: {spsr_el1:?}");
+            let raw: u64 = r.bits();
+            let name = r.name();
+            log::info!("{name}\t{raw:#016x?}: {r:x?}");
+        }
+    }
+}
+
+fn walk_page_tables() {
+    #[cfg(target_arch = "aarch64")]
+    {
+        use crate::aarch64_regs::access::Aarch64Register;
+        use crate::aarch64_regs::*;
+
+        // Traverse page tables assuming 4K pages (check TCR!)
+
+        let mut ttbr0_el1 = TranslationBase0El1::new();
+        ttbr0_el1.load();
+
+        let lvl4_table =
+            unsafe { core::slice::from_raw_parts(ttbr0_el1.baddr() as *const PageTableEntry, 512) };
+
+        let lvl3_table = unsafe {
+            core::slice::from_raw_parts(
+                (lvl4_table[0].next_table_pfn() << 12) as *const PageBlockEntry,
+                512,
+            )
+        };
+
+        log::info!("{:x?}", lvl3_table[5]);
 
         let mut dfs_stack = [(0u64, 0u64); 512];
         let mut dfs_stack_top = 0;
@@ -354,7 +379,8 @@ fn report_boot_processor_info() {
 
             // This a table pointer.
             let entry = PageTableEntry::from(entry);
-            log::info!("{entry:x?}");
+            let entry_raw = u64::from(entry);
+            log::info!("PTE {entry_raw:#x}: {entry:x?}");
 
             // Assuming 4K pages (check TCR!)
             let next_table_entries = unsafe {
@@ -365,7 +391,8 @@ fn report_boot_processor_info() {
                 if level >= 3 {
                     // This is a block pointer (a leaf).
                     let entry = PageBlockEntry::from(entry);
-                    log::info!("{entry:x?}");
+                    let entry_raw = u64::from(entry);
+                    log::info!("PBE {entry_raw:#x}: {entry:x?}");
                     continue;
                 }
 
@@ -375,7 +402,8 @@ fn report_boot_processor_info() {
                 } else if entry & 1 == 1 {
                     // This is a block pointer (a leaf).
                     let entry = PageBlockEntry::from(entry);
-                    log::info!("{entry:x?}");
+                    let entry_raw = u64::from(entry);
+                    log::info!("PBE {entry_raw:#x}: {entry:x?}");
                 }
             }
         }
@@ -543,6 +571,9 @@ fn main(image_handle: Handle, mut boot_system_table: SystemTable<Boot>) -> Statu
 
     log::info!("Loading **CorgOS/{}**", arch_name());
     report_boot_processor_info();
+    if config.walk_page_tables {
+        walk_page_tables();
+    }
     report_uefi_info(&boot_system_table);
 
     if let Some(watchdog_seconds) = config.watchdog_seconds {
