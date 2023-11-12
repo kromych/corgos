@@ -558,6 +558,7 @@ fn panic(panic: &PanicInfo<'_>) -> ! {
     }
 }
 
+#[cfg(target_arch = "x86_64")]
 #[no_mangle]
 extern "efiapi" fn __chkstk() {}
 
