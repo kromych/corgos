@@ -22,6 +22,7 @@ use uefi::proto::media::file::File;
 use uefi::proto::media::file::FileAttribute;
 use uefi::proto::media::file::FileMode;
 use uefi::proto::media::fs::SimpleFileSystem;
+use uefi::table::boot::MemoryType;
 use uefi::table::runtime::ResetType;
 use uefi::table::Runtime;
 use uefi::CStr16;
@@ -435,8 +436,7 @@ fn arch_name() -> &'static str {
 fn boot_wait_for_key_press(boot_system_table: &mut SystemTable<Boot>) {
     unsafe {
         let mut boot_system_table_key_event = boot_system_table.unsafe_clone();
-        let key_event = boot_system_table_key_event.stdin().wait_for_key_event();
-        {
+        if let Some(key_event) = boot_system_table_key_event.stdin().wait_for_key_event() {
             let boot_system_table_wait_event = boot_system_table.unsafe_clone();
             boot_system_table_wait_event
                 .boot_services()
@@ -590,7 +590,8 @@ fn main(image_handle: Handle, mut boot_system_table: SystemTable<Boot>) -> Statu
         return Status::ABORTED;
     }
 
-    let (_runtime_system_table, mut memory_map) = boot_system_table.exit_boot_services();
+    let (_runtime_system_table, mut memory_map) =
+        boot_system_table.exit_boot_services(MemoryType(0x70000000));
 
     memory_map.sort();
     log::info!("Memory map has {} entries", memory_map.entries().len());

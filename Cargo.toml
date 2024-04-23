@@ -13,10 +13,10 @@ elf = { version = "0.7", default-features = false }
 log = { version = "0.4", default-features = false }
 qemu-exit = { version = "3", default-features = false }
 raw-cpuid = { version = "11", default-features = false }
-spinning_top = "0.2"
-uefi = { version = "0.23", default-features = false }
+spinning_top = "0.3"
+uefi = { version = "0.28", default-features = false }
 
-tock-registers = { version = "0.8", default-features = false }
+tock-registers = { version = "0.9", default-features = false }
 aarch64-cpu = "9.3"
 
 corg-ini = { path = "corgini" }
