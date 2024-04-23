@@ -1,7 +1,7 @@
 # CorgOS
 
 > This repo uses submodules. Please clone with
-> `git clone --recusrive https://github.com/kromych/corgos`
+> `git clone --recurse https://github.com/kromych/corgos`
 > or do
 >
 > ```sh
