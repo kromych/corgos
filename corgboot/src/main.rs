@@ -174,10 +174,12 @@ fn parse_config(bytes: &[u8]) -> Option<BootLoaderConfig> {
                 _ => continue,
             },
             b"wait_for_start" => {
-                config.wait_for_start = value == b"yes" || value == b"on" || value == b"1"
+                config.wait_for_start =
+                    value == b"yes" || value == b"on" || value == b"1" || value == b"true"
             }
             b"walk_page_tables" => {
-                config.walk_page_tables = value == b"yes" || value == b"on" || value == b"1"
+                config.walk_page_tables =
+                    value == b"yes" || value == b"on" || value == b"1" || value == b"true"
             }
             b"revision" => log::trace!("Revision '{}'", unsafe {
                 core::str::from_utf8_unchecked(value)
