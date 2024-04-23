@@ -1,5 +1,14 @@
 # CorgOS
 
+> This repo uses submodules. Please clone with
+> `git clone --recusrive https://github.com/kromych/corgos`
+> or do
+>
+> ```sh
+> git submodule init
+> git submodule update
+> ```
+
 Currently, this is a UEFI bootloader that logs to the serial port. It supports a configuration file
 to specify where to log to, and other parameters like so for `x86_64`:
 
@@ -43,5 +52,5 @@ To build for `x86_64` and `aarch64`, run
 ./build.sh
 ```
 
-To boot with `qemu`, use ` ./qemu-run-x86_64.sh` or ` ./qemu-run-aarch64.sh`. The UEFI log
+To boot with `qemu`, use `./qemu-run-x86_64.sh` or `./qemu-run-aarch64.sh`. The UEFI log
 is written to `fw.log`, the serial logs go to `serial*.log` files.
