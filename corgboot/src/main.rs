@@ -15,8 +15,8 @@ use corg_uart::ComPort;
 use corg_uart::ComPortIo;
 use corg_uart::Pl011;
 use log::LevelFilter;
-use uefi::entry;
-use uefi::prelude::*;
+use uefi::mem::memory_map::MemoryMap;
+use uefi::mem::memory_map::MemoryMapMut;
 use uefi::proto::console::text::Output;
 use uefi::proto::media::file::File;
 use uefi::proto::media::file::FileAttribute;
@@ -24,7 +24,9 @@ use uefi::proto::media::file::FileMode;
 use uefi::proto::media::fs::SimpleFileSystem;
 use uefi::table::boot::MemoryType;
 use uefi::table::runtime::ResetType;
+use uefi::table::Boot;
 use uefi::table::Runtime;
+use uefi::table::SystemTable;
 use uefi::CStr16;
 use uefi::Handle;
 use uefi::Status;
@@ -127,9 +129,9 @@ impl Default for BootLoaderConfig {
 
 /// The name of the configuration file in the ESP partition alongside the loader.
 #[cfg(target_arch = "x86_64")]
-const CORGOS_INI: &CStr16 = cstr16!("corgos-boot-x86_64.ini");
+const CORGOS_INI: &CStr16 = uefi::cstr16!("corgos-boot-x86_64.ini");
 #[cfg(target_arch = "aarch64")]
-const CORGOS_INI: &CStr16 = cstr16!("corgos-boot-aarch64.ini");
+const CORGOS_INI: &CStr16 = uefi::cstr16!("corgos-boot-aarch64.ini");
 
 /// Upon panic, b"CORGBARF" is loaded into R8. R9 contains the address of the file name,
 /// R10 contains the line number in the least significant 32 bits, and the column number
@@ -564,7 +566,7 @@ fn panic(panic: &PanicInfo<'_>) -> ! {
 #[no_mangle]
 extern "efiapi" fn __chkstk() {}
 
-#[entry]
+#[uefi::entry]
 fn main(image_handle: Handle, mut boot_system_table: SystemTable<Boot>) -> Status {
     let config = get_config(&boot_system_table);
     if config.wait_for_start {
@@ -593,7 +595,7 @@ fn main(image_handle: Handle, mut boot_system_table: SystemTable<Boot>) -> Statu
     }
 
     let (_runtime_system_table, mut memory_map) =
-        boot_system_table.exit_boot_services(MemoryType(0x70000000));
+        unsafe { boot_system_table.exit_boot_services(MemoryType(0x70000000)) };
 
     memory_map.sort();
     log::info!("Memory map has {} entries", memory_map.entries().len());
