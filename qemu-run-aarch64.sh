@@ -12,7 +12,7 @@ SILENT="silent-"
 
 OVMF_CODE=${PWD}/edk2-uefi/aarch64/QEMU_EFI-${SILENT}pflash.raw
 OVMF_VARS=${PWD}/edk2-uefi/aarch64/vars-template-pflash.raw
-BUILD_DIR=${PWD}/target/aarch64-boot/release
+BUILD_DIR=${PWD}/target/aarch64-unknown-uefi/release
 EFI_DIR=${PWD}/esp
 OVMF_DIR=${PWD}/ovmf
 NUM_PROC=8
