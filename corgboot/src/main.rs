@@ -7,7 +7,6 @@ mod aarch64_regs;
 
 use core::arch::asm;
 use core::fmt::Write;
-use core::panic::PanicInfo;
 
 use conquer_once::spin::OnceCell;
 use corg_uart::BaudDivisor;
@@ -507,8 +506,9 @@ fn wait_for_start() {
     }
 }
 
+#[cfg(target_os = "uefi")]
 #[panic_handler]
-fn panic(panic: &PanicInfo<'_>) -> ! {
+fn panic(panic: &core::panic::PanicInfo<'_>) -> ! {
     log::error!("{panic}");
 
     let (_file_name_addr, _line_col) = if let Some(location) = panic.location() {
