@@ -8,6 +8,8 @@
 #C-a c    switch between console and monitor
 #C-a C-a  sends C-a
 
+set -e
+
 SILENT="silent-"
 
 OVMF_CODE=${PWD}/edk2-uefi/aarch64/QEMU_EFI-${SILENT}pflash.raw
@@ -27,7 +29,7 @@ mkdir -p $OVMF_DIR
 
 cp $OVMF_CODE $OVMF_DIR
 cp $OVMF_VARS $OVMF_DIR
-cp $BUILD_DIR/corgos-boot.efi $EFI_DIR/efi/boot/bootaa64.efi
+cp $BUILD_DIR/boot_loader.efi $EFI_DIR/efi/boot/bootaa64.efi
 echo "revision = \"$REVISION\"" > $BOOT_INI_FILE
 echo "log_device = \"pl011@9000000\"" >> $BOOT_INI_FILE
 echo "log_level = trace" >> $BOOT_INI_FILE
