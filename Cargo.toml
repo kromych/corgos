@@ -14,7 +14,7 @@ log = { version = "0.4", default-features = false }
 qemu-exit = { version = "3", default-features = false }
 raw-cpuid = { version = "11", default-features = false }
 spinning_top = "0.3"
-uefi = { version = "0.31", default-features = false }
+uefi = { version = "0.32", default-features = false }
 
 tock-registers = { version = "0.9", default-features = false }
 aarch64-cpu = "9.3"

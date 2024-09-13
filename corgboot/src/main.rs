@@ -15,26 +15,26 @@ use corg_uart::ComPort;
 use corg_uart::ComPortIo;
 use corg_uart::Pl011;
 use log::LevelFilter;
+use uefi::boot;
 use uefi::mem::memory_map::MemoryMap;
 use uefi::mem::memory_map::MemoryMapMut;
+use uefi::proto::console::text::Input;
 use uefi::proto::console::text::Output;
 use uefi::proto::media::file::File;
 use uefi::proto::media::file::FileAttribute;
 use uefi::proto::media::file::FileMode;
 use uefi::proto::media::fs::SimpleFileSystem;
+use uefi::runtime;
+use uefi::system;
 use uefi::table::boot::MemoryType;
 use uefi::table::runtime::ResetType;
-use uefi::table::Boot;
-use uefi::table::Runtime;
-use uefi::table::SystemTable;
 use uefi::CStr16;
-use uefi::Handle;
 use uefi::Status;
 
 #[allow(dead_code)]
 #[derive(Debug)]
 enum LogOutput {
-    Stdout(*mut Output),
+    Stdout,
     Com(ComPort),
     Pl(Pl011),
 }
@@ -54,18 +54,21 @@ impl log::Log for BootLogger {
     fn log(&self, record: &log::Record) {
         match &self.0 {
             None => {}
-            Some(LogOutput::Stdout(stdout)) => {
-                let stdout = unsafe { stdout.as_mut().unwrap() };
-                writeln!(
-                    stdout,
-                    "[{:7}][{}:{}@{}]  {}",
-                    record.level(),
-                    record.module_path().unwrap_or_default(),
-                    record.file().unwrap_or_default(),
-                    record.line().unwrap_or_default(),
-                    record.args()
-                )
-                .ok();
+            Some(LogOutput::Stdout) => {
+                let stdout =
+                    boot::get_handle_for_protocol::<Output>().expect("can get stdout handle");
+                let mut stdout =
+                    boot::open_protocol_exclusive::<Output>(stdout).expect("can open stdout");
+                stdout
+                    .write_fmt(format_args!(
+                        "[{:7}][{}:{}@{}]  {}",
+                        record.level(),
+                        record.module_path().unwrap_or_default(),
+                        record.file().unwrap_or_default(),
+                        record.line().unwrap_or_default(),
+                        record.args(),
+                    ))
+                    .ok();
             }
             Some(LogOutput::Com(mut serial_port)) => {
                 write!(
@@ -200,13 +203,10 @@ fn parse_config(bytes: &[u8]) -> Option<BootLoaderConfig> {
     Some(config)
 }
 
-fn get_config(boot_system_table: &SystemTable<Boot>) -> BootLoaderConfig {
+fn get_config() -> BootLoaderConfig {
     let mut config = BootLoaderConfig::default();
-
-    let boot_system_table_unsafe_clone = unsafe { boot_system_table.unsafe_clone() };
-    let boot_services = boot_system_table_unsafe_clone.boot_services();
-    if let Ok(fs_handle) = boot_services.get_handle_for_protocol::<SimpleFileSystem>() {
-        if let Ok(mut fs) = boot_services.open_protocol_exclusive::<SimpleFileSystem>(fs_handle) {
+    if let Ok(fs_handle) = boot::get_handle_for_protocol::<SimpleFileSystem>() {
+        if let Ok(mut fs) = boot::open_protocol_exclusive::<SimpleFileSystem>(fs_handle) {
             if let Ok(mut root_directory) = fs.open_volume() {
                 if let Ok(file) =
                     root_directory.open(CORGOS_INI, FileMode::Read, FileAttribute::empty())
@@ -228,12 +228,12 @@ fn get_config(boot_system_table: &SystemTable<Boot>) -> BootLoaderConfig {
 
 static BOOT_LOGGER: OnceCell<BootLogger> = OnceCell::uninit();
 
-fn setup_logger(boot_system_table: &mut SystemTable<Boot>, config: &BootLoaderConfig) {
-    let mut stdout_logger = || {
-        // TODO: rework this barf
-        boot_system_table.stdout().clear().ok();
-        let stdout = boot_system_table.stdout() as *mut Output as u64;
-        Some(LogOutput::Stdout(stdout as *mut Output))
+fn setup_logger(config: &BootLoaderConfig) {
+    let stdout_logger = || {
+        let stdout = boot::get_handle_for_protocol::<Output>().expect("can get stdout handle");
+        let mut stdout = boot::open_protocol_exclusive::<Output>(stdout).expect("can open stdout");
+        stdout.clear().ok();
+        Some(LogOutput::Stdout)
     };
 
     let logger = BOOT_LOGGER.get_or_init(move || {
@@ -415,10 +415,10 @@ fn walk_page_tables() {
     }
 }
 
-fn report_uefi_info(boot_system_table: &SystemTable<Boot>) {
-    let fw_vendor = boot_system_table.firmware_vendor();
-    let fw_revision = boot_system_table.firmware_revision();
-    let uefi_revision = boot_system_table.uefi_revision();
+fn report_uefi_info() {
+    let fw_vendor = system::firmware_vendor();
+    let fw_revision = system::firmware_revision();
+    let uefi_revision = system::uefi_revision();
     log::info!(
         "Firmware {fw_vendor} {:x}.{:x}, UEFI revision {uefi_revision}",
         fw_revision >> 16,
@@ -437,26 +437,28 @@ fn arch_name() -> &'static str {
     }
 }
 
-fn boot_wait_for_key_press(boot_system_table: &mut SystemTable<Boot>) {
-    unsafe {
-        let mut boot_system_table_key_event = boot_system_table.unsafe_clone();
-        if let Some(key_event) = boot_system_table_key_event.stdin().wait_for_key_event() {
-            let boot_system_table_wait_event = boot_system_table.unsafe_clone();
-            boot_system_table_wait_event
-                .boot_services()
-                .wait_for_event(&mut [key_event.unsafe_clone()])
-                .ok();
-        }
-    }
+fn boot_wait_for_key_press() {
+    let stdin = if let Some(stdin) = boot::get_handle_for_protocol::<Input>().ok() {
+        stdin
+    } else {
+        return;
+    };
+    let stdin = if let Some(stdin) = boot::open_protocol_exclusive::<Input>(stdin).ok() {
+        stdin
+    } else {
+        return;
+    };
+    let event = if let Some(event) = stdin.wait_for_key_event() {
+        event
+    } else {
+        return;
+    };
+    boot::wait_for_event(&mut [event]).ok();
 }
 
 #[allow(dead_code)]
-fn reset(runtime_system_table: SystemTable<Runtime>) {
-    unsafe {
-        runtime_system_table
-            .runtime_services()
-            .reset(ResetType::WARM, Status::ABORTED, None);
-    }
+fn reset() {
+    runtime::reset(ResetType::WARM, Status::ABORTED, None);
 }
 
 #[allow(dead_code)]
@@ -567,35 +569,31 @@ fn panic(panic: &PanicInfo<'_>) -> ! {
 extern "efiapi" fn __chkstk() {}
 
 #[uefi::entry]
-fn main(image_handle: Handle, mut boot_system_table: SystemTable<Boot>) -> Status {
-    let config = get_config(&boot_system_table);
+fn main() -> Status {
+    let config = get_config();
     if config.wait_for_start {
         wait_for_start();
     }
-    setup_logger(&mut boot_system_table, &config);
+    setup_logger(&config);
 
     log::info!("Loading **CorgOS/{}**", arch_name());
     report_boot_processor_info();
     if config.walk_page_tables {
         walk_page_tables();
     }
-    report_uefi_info(&boot_system_table);
+    report_uefi_info();
 
     if let Some(watchdog_seconds) = config.watchdog_seconds {
-        boot_system_table
-            .boot_services()
-            .set_watchdog_timer(watchdog_seconds, WATCHDOG_TIMEOUT_CODE, None)
-            .unwrap();
+        boot::set_watchdog_timer(watchdog_seconds, WATCHDOG_TIMEOUT_CODE, None).unwrap();
         log::info!(
             "Hit a key to exit loader, otherwise the system will reboot. Timeout {watchdog_seconds} seconds"
         );
 
-        boot_wait_for_key_press(&mut boot_system_table);
+        boot_wait_for_key_press();
         return Status::ABORTED;
     }
 
-    let (_runtime_system_table, mut memory_map) =
-        unsafe { boot_system_table.exit_boot_services(MemoryType(0x70000000)) };
+    let mut memory_map = unsafe { boot::exit_boot_services(MemoryType(0x70000000)) };
 
     memory_map.sort();
     log::info!("Memory map has {} entries", memory_map.entries().len());
