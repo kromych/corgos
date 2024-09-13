@@ -4,6 +4,7 @@ members = [
   "corgos/boot/loader",
   "corgos/boot/logger",
   "corgos/boot/uart",
+  "corgos/kernel/start",
   "support/ini_file",
 ]
 
@@ -24,3 +25,10 @@ ini_file = { path = "support/ini_file" }
 boot_loader = { path = "corgos/boot/loader" }
 boot_logger = { path = "corgos/boot/logger" }
 boot_uart = { path = "corgos/boot/uart" }
+kernel_start = { path = "corgos/kernel/start" }
+
+[profile.release]
+panic = "abort"
+
+[profile.dev]
+panic = "abort"
