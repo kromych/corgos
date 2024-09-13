@@ -371,7 +371,7 @@ fn panic(panic: &core::panic::PanicInfo<'_>) -> ! {
     #[allow(unreachable_code)]
     {
         let qemu_exit_handle = qemu_exit::X86::new(0xf4, 0xf);
-        qemu_exit_handle.exit(_line_col as u32);
+        qemu_exit_handle.exit_failure();
 
         loop {
             unsafe {
@@ -392,7 +392,7 @@ fn panic(panic: &core::panic::PanicInfo<'_>) -> ! {
     {
         // needs `-semihosting` on the qemu's command line.
         let qemu_exit_handle = qemu_exit::AArch64::new();
-        qemu_exit_handle.exit(_line_col as u32);
+        qemu_exit_handle.exit_failure();
 
         loop {
             unsafe {
