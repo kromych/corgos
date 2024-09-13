@@ -1,5 +1,5 @@
 [package]
-name = "corg-ini"
-version = "0.1.0"
+name = "boot_uart"
+version = "0.0.0"
 authors = ["kromych"]
 edition = "2021"

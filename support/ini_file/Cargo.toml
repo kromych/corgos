@@ -1,5 +1,5 @@
 [package]
-name = "corg-uart"
-version = "0.1.0"
+name = "ini_file"
+version = "0.0.0"
 authors = ["kromych"]
 edition = "2021"

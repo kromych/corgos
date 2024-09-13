@@ -1,6 +1,6 @@
 [package]
-name = "corgos-boot"
-version = "0.1.0"
+name = "boot_loader"
+version = "0.0.0"
 authors = ["kromych"]
 edition = "2021"
 
@@ -9,13 +9,11 @@ bitfield-struct.workspace = true
 uefi.workspace = true
 log.workspace = true
 elf.workspace = true
-spinning_top.workspace = true
-conquer-once.workspace = true
 qemu-exit.workspace = true
 
 raw-cpuid.workspace = true
 tock-registers.workspace = true
 aarch64-cpu.workspace = true
 
-corg-ini.workspace = true
-corg-uart.workspace = true
+boot_logger.workspace = true
+ini_file.workspace = true

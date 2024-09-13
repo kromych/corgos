@@ -1,0 +1,13 @@
+[package]
+name = "boot_logger"
+version = "0.0.0"
+authors = ["kromych"]
+edition = "2021"
+
+[dependencies]
+uefi.workspace = true
+log.workspace = true
+spinning_top.workspace = true
+conquer-once.workspace = true
+
+boot_uart.workspace = true

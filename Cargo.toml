@@ -1,9 +1,10 @@
 [workspace]
 resolver = "2"
 members = [
-  "corgboot",
-  "corgini",
-  "corguart",
+  "corgos/boot/loader",
+  "corgos/boot/logger",
+  "corgos/boot/uart",
+  "support/ini_file",
 ]
 
 [workspace.dependencies]
@@ -19,5 +20,7 @@ uefi = { version = "0.32", default-features = false }
 tock-registers = { version = "0.9", default-features = false }
 aarch64-cpu = "9.3"
 
-corg-ini = { path = "corgini" }
-corg-uart = { path = "corguart" }
+ini_file = { path = "support/ini_file" }
+boot_loader = { path = "corgos/boot/loader" }
+boot_logger = { path = "corgos/boot/logger" }
+boot_uart = { path = "corgos/boot/uart" }

@@ -5,20 +5,14 @@
 #[cfg(target_arch = "aarch64")]
 mod aarch64_regs;
 
+use boot_logger::BootLoaderConfig;
+use boot_logger::LogDevice;
 use core::arch::asm;
-use core::fmt::Write;
-
-use conquer_once::spin::OnceCell;
-use corg_uart::BaudDivisor;
-use corg_uart::ComPort;
-use corg_uart::ComPortIo;
-use corg_uart::Pl011;
 use log::LevelFilter;
 use uefi::boot;
 use uefi::mem::memory_map::MemoryMap;
 use uefi::mem::memory_map::MemoryMapMut;
 use uefi::proto::console::text::Input;
-use uefi::proto::console::text::Output;
 use uefi::proto::media::file::File;
 use uefi::proto::media::file::FileAttribute;
 use uefi::proto::media::file::FileMode;
@@ -29,105 +23,6 @@ use uefi::table::boot::MemoryType;
 use uefi::table::runtime::ResetType;
 use uefi::CStr16;
 use uefi::Status;
-
-#[allow(dead_code)]
-#[derive(Debug)]
-enum LogOutput {
-    Stdout,
-    Com(ComPort),
-    Pl(Pl011),
-}
-
-/// Single-thread logger
-#[derive(Debug)]
-struct BootLogger(Option<LogOutput>);
-
-unsafe impl Send for BootLogger {}
-unsafe impl Sync for BootLogger {}
-
-impl log::Log for BootLogger {
-    fn enabled(&self, _metadata: &log::Metadata) -> bool {
-        true
-    }
-
-    fn log(&self, record: &log::Record) {
-        match &self.0 {
-            None => {}
-            Some(LogOutput::Stdout) => {
-                let stdout =
-                    boot::get_handle_for_protocol::<Output>().expect("can get stdout handle");
-                let mut stdout =
-                    boot::open_protocol_exclusive::<Output>(stdout).expect("can open stdout");
-                stdout
-                    .write_fmt(format_args!(
-                        "[{:7}][{}:{}@{}]  {}",
-                        record.level(),
-                        record.module_path().unwrap_or_default(),
-                        record.file().unwrap_or_default(),
-                        record.line().unwrap_or_default(),
-                        record.args(),
-                    ))
-                    .ok();
-            }
-            Some(LogOutput::Com(mut serial_port)) => {
-                write!(
-                    serial_port,
-                    "[{:7}][{}:{}@{}]  {}\r\n",
-                    record.level(),
-                    record.module_path().unwrap_or_default(),
-                    record.file().unwrap_or_default(),
-                    record.line().unwrap_or_default(),
-                    record.args()
-                )
-                .ok();
-            }
-            Some(LogOutput::Pl(mut pl011_dev)) => {
-                write!(
-                    pl011_dev,
-                    "[{:7}][{}:{}@{}]  {}\r\n",
-                    record.level(),
-                    record.module_path().unwrap_or_default(),
-                    record.file().unwrap_or_default(),
-                    record.line().unwrap_or_default(),
-                    record.args()
-                )
-                .ok();
-            }
-        }
-    }
-
-    fn flush(&self) {}
-}
-
-#[derive(Debug, Clone)]
-enum LogDevice {
-    Null,
-    StdOut,
-    Com1,
-    Com2,
-    Pl011(u64),
-}
-
-#[derive(Debug, Clone)]
-struct BootLoaderConfig {
-    log_device: LogDevice,
-    log_level: LevelFilter,
-    wait_for_start: bool,
-    walk_page_tables: bool,
-    watchdog_seconds: Option<usize>,
-}
-
-impl Default for BootLoaderConfig {
-    fn default() -> Self {
-        Self {
-            log_device: LogDevice::StdOut,
-            log_level: LevelFilter::Trace,
-            wait_for_start: false,
-            walk_page_tables: false,
-            watchdog_seconds: None,
-        }
-    }
-}
 
 /// The name of the configuration file in the ESP partition alongside the loader.
 #[cfg(target_arch = "x86_64")]
@@ -146,9 +41,9 @@ const WATCHDOG_TIMEOUT_CODE: u64 = CORGOS_BARF;
 
 fn parse_config(bytes: &[u8]) -> Option<BootLoaderConfig> {
     let mut config = BootLoaderConfig::default();
-    let mut parser = corg_ini::Parser::new(bytes);
+    let mut parser = ini_file::Parser::new(bytes);
 
-    while let Ok(Some(corg_ini::KeyValue { key, value })) = parser.parse() {
+    while let Ok(Some(ini_file::KeyValue { key, value })) = parser.parse() {
         match key {
             b"log_device" => match value {
                 b"null" => config.log_device = LogDevice::Null,
@@ -223,58 +118,6 @@ fn get_config() -> BootLoaderConfig {
     }
 
     config
-}
-
-static BOOT_LOGGER: OnceCell<BootLogger> = OnceCell::uninit();
-
-fn setup_logger(config: &BootLoaderConfig) {
-    let stdout_logger = || {
-        let stdout = boot::get_handle_for_protocol::<Output>().expect("can get stdout handle");
-        let mut stdout = boot::open_protocol_exclusive::<Output>(stdout).expect("can open stdout");
-        stdout.clear().ok();
-        Some(LogOutput::Stdout)
-    };
-
-    let logger = BOOT_LOGGER.get_or_init(move || {
-        let output = match config.log_device {
-            LogDevice::StdOut => stdout_logger(),
-            LogDevice::Com1 => {
-                if cfg!(target_arch = "x86_64") {
-                    Some(LogOutput::Com(ComPort::new(
-                        ComPortIo::Com1,
-                        BaudDivisor::Baud115200,
-                    )))
-                } else {
-                    stdout_logger()
-                }
-            }
-            LogDevice::Com2 => {
-                if cfg!(target_arch = "x86_64") {
-                    Some(LogOutput::Com(ComPort::new(
-                        ComPortIo::Com2,
-                        BaudDivisor::Baud115200,
-                    )))
-                } else {
-                    stdout_logger()
-                }
-            }
-            LogDevice::Pl011(base_addr) => {
-                if cfg!(target_arch = "aarch64") {
-                    Some(LogOutput::Pl(Pl011::new(base_addr)))
-                } else {
-                    stdout_logger()
-                }
-            }
-            LogDevice::Null => None,
-        };
-
-        BootLogger(output)
-    });
-
-    log::set_logger(logger).unwrap();
-    log::set_max_level(config.log_level);
-
-    log::trace!("{config:x?}, {logger:x?}");
 }
 
 fn report_boot_processor_info() {
@@ -574,7 +417,7 @@ fn main() -> Status {
     if config.wait_for_start {
         wait_for_start();
     }
-    setup_logger(&config);
+    boot_logger::setup_logger(&config);
 
     log::info!("Loading **CorgOS/{}**", arch_name());
     report_boot_processor_info();

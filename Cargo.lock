@@ -41,6 +41,37 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b048fb63fd8b5923fc5aa7b340d8e156aec7ec02f0c78fa8a6ddc2613f6f71de"
 
 [[package]]
+name = "boot_loader"
+version = "0.0.0"
+dependencies = [
+ "aarch64-cpu",
+ "bitfield-struct",
+ "boot_logger",
+ "elf",
+ "ini_file",
+ "log",
+ "qemu-exit",
+ "raw-cpuid",
+ "tock-registers 0.9.0",
+ "uefi",
+]
+
+[[package]]
+name = "boot_logger"
+version = "0.0.0"
+dependencies = [
+ "boot_uart",
+ "conquer-once",
+ "log",
+ "spinning_top",
+ "uefi",
+]
+
+[[package]]
+name = "boot_uart"
+version = "0.0.0"
+
+[[package]]
 name = "cfg-if"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -62,36 +93,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e763eef8846b13b380f37dfecda401770b0ca4e56e95170237bd7c25c7db3582"
 
 [[package]]
-name = "corg-ini"
-version = "0.1.0"
-
-[[package]]
-name = "corg-uart"
-version = "0.1.0"
-
-[[package]]
-name = "corgos-boot"
-version = "0.1.0"
-dependencies = [
- "aarch64-cpu",
- "bitfield-struct",
- "conquer-once",
- "corg-ini",
- "corg-uart",
- "elf",
- "log",
- "qemu-exit",
- "raw-cpuid",
- "spinning_top",
- "tock-registers 0.9.0",
- "uefi",
-]
-
-[[package]]
 name = "elf"
 version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4445909572dbd556c457c849c4ca58623d84b27c8fff1e74b0b4227d8b90d17b"
+
+[[package]]
+name = "ini_file"
+version = "0.0.0"
 
 [[package]]
 name = "lock_api"
