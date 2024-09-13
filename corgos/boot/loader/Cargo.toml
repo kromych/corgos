@@ -4,6 +4,9 @@ version = "0.0.0"
 authors = ["kromych"]
 edition = "2021"
 
+# Has support for the aarch64 UEFI target
+rust-version = "1.81"
+
 [dependencies]
 bitfield-struct.workspace = true
 uefi.workspace = true
