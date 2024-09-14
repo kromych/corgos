@@ -5,13 +5,19 @@
 ### Ubuntu
 
 ```bash
-sudo apt-get install clang llvm clang-tools lld
+sudo apt-get install clang llvm clang-tools lld qemu-system
 ```
 
 ### Fedora
 
 ```bash
-sudo dnf install clang llvm clang-tools lld
+sudo dnf install clang llvm clang-tools lld qemu-system
+```
+
+### macOS
+
+```bash
+brew install llvm qemu
 ```
 
 ## Cloning the repo
