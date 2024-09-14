@@ -1,6 +1,6 @@
 # CorgOS
 
-## Setting up the build hsot
+## Setting up the build host
 
 ### Ubuntu
 
