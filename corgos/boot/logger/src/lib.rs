@@ -13,10 +13,17 @@ use uefi::proto::console::text::Output;
 
 #[derive(Debug, Clone)]
 pub struct BootLoaderConfig {
+    /// The target device for boot logging.
     pub log_device: LogDevice,
+    /// Verbosity for logging.
     pub log_level: LevelFilter,
+    /// Log source line and path.
+    pub log_source_path: bool,
+    /// Wait at the entry point until `x9` or `r9` are set to `0`.
     pub wait_for_start: bool,
+    /// Walk the page tables, and dump the page table entries.
     pub walk_page_tables: bool,
+    /// TImeout in seconds for the UEFI watchdog.
     pub watchdog_seconds: Option<usize>,
 }
 
@@ -25,6 +32,7 @@ impl Default for BootLoaderConfig {
         Self {
             log_device: LogDevice::StdOut,
             log_level: LevelFilter::Trace,
+            log_source_path: false,
             wait_for_start: false,
             walk_page_tables: false,
             watchdog_seconds: None,
@@ -42,7 +50,38 @@ pub enum LogOutput {
 
 /// Single-thread logger
 #[derive(Debug)]
-pub struct BootLogger(Option<LogOutput>);
+pub struct BootLogger {
+    output: Option<LogOutput>,
+    log_source_path: bool,
+}
+
+impl BootLogger {
+    fn write(&self, output: &mut dyn Write, record: &log::Record) {
+        output
+            .write_fmt(format_args!(
+                "[{:7}][{}",
+                record.level(),
+                record.module_path().unwrap_or_default(),
+            ))
+            .ok();
+        if self.log_source_path {
+            output
+                .write_fmt(format_args!(
+                    "{}@{}",
+                    record.file().unwrap_or_default(),
+                    record.line().unwrap_or_default(),
+                ))
+                .ok();
+        }
+        output.write_fmt(format_args!("] {}", record.args())).ok();
+        if matches!(
+            self.output,
+            Some(LogOutput::Com(_)) | Some(LogOutput::Pl(_))
+        ) {
+            output.write_str("\r\n").ok();
+        }
+    }
+}
 
 unsafe impl Send for BootLogger {}
 unsafe impl Sync for BootLogger {}
@@ -53,47 +92,20 @@ impl log::Log for BootLogger {
     }
 
     fn log(&self, record: &log::Record) {
-        match &self.0 {
+        match &self.output {
             None => {}
             Some(LogOutput::Stdout) => {
                 let stdout =
                     boot::get_handle_for_protocol::<Output>().expect("can get stdout handle");
                 let mut stdout =
                     boot::open_protocol_exclusive::<Output>(stdout).expect("can open stdout");
-                stdout
-                    .write_fmt(format_args!(
-                        "[{:7}][{}:{}@{}]  {}",
-                        record.level(),
-                        record.module_path().unwrap_or_default(),
-                        record.file().unwrap_or_default(),
-                        record.line().unwrap_or_default(),
-                        record.args(),
-                    ))
-                    .ok();
+                self.write(&mut *stdout, record);
             }
             Some(LogOutput::Com(mut serial_port)) => {
-                write!(
-                    serial_port,
-                    "[{:7}][{}:{}@{}]  {}\r\n",
-                    record.level(),
-                    record.module_path().unwrap_or_default(),
-                    record.file().unwrap_or_default(),
-                    record.line().unwrap_or_default(),
-                    record.args()
-                )
-                .ok();
+                self.write(&mut serial_port, record);
             }
             Some(LogOutput::Pl(mut pl011_dev)) => {
-                write!(
-                    pl011_dev,
-                    "[{:7}][{}:{}@{}]  {}\r\n",
-                    record.level(),
-                    record.module_path().unwrap_or_default(),
-                    record.file().unwrap_or_default(),
-                    record.line().unwrap_or_default(),
-                    record.args()
-                )
-                .ok();
+                self.write(&mut pl011_dev, record);
             }
         }
     }
@@ -153,7 +165,10 @@ pub fn setup_logger(config: &BootLoaderConfig) {
             LogDevice::Null => None,
         };
 
-        BootLogger(output)
+        BootLogger {
+            output,
+            log_source_path: config.log_source_path,
+        }
     });
 
     log::set_logger(logger).unwrap();

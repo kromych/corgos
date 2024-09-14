@@ -72,6 +72,10 @@ fn parse_config(bytes: &[u8]) -> Option<BootLoaderConfig> {
                 b"trace" => config.log_level = LevelFilter::Trace,
                 _ => continue,
             },
+            b"log_source_path" => {
+                config.log_source_path =
+                    value == b"yes" || value == b"on" || value == b"1" || value == b"true"
+            }
             b"wait_for_start" => {
                 config.wait_for_start =
                     value == b"yes" || value == b"on" || value == b"1" || value == b"true"

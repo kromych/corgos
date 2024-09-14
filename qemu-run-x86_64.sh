@@ -32,7 +32,7 @@ echo "revision = \"$REVISION\"" > $BOOT_INI_FILE
 echo "log_device = com2" >> $BOOT_INI_FILE
 echo "log_level = trace" >> $BOOT_INI_FILE
 echo "wait_for_start = false" >> $BOOT_INI_FILE
-echo "wait_for_start = false" >> $BOOT_INI_FILE
+echo "walk_page_tables = false" >> $BOOT_INI_FILE
 
 qemu-system-x86_64 \
     -nodefaults -s \

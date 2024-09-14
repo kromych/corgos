@@ -56,17 +56,19 @@ walk_page_tables = false
 The names of the keys come from this definition (this will be a rustdoc one day):
 
 ```rust
-struct BootLoaderConfig {
+pub struct BootLoaderConfig {
     /// The target device for boot logging.
-    log_device: LogDevice,
-    /// Verbosity for logging
-    log_level: LevelFilter,
+    pub log_device: LogDevice,
+    /// Verbosity for logging.
+    pub log_level: LevelFilter,
+    /// Log source line and path.
+    pub log_source_path: bool,
     /// Wait at the entry point until `x9` or `r9` are set to `0`.
-    wait_for_start: bool,
+    pub wait_for_start: bool,
     /// Walk the page tables, and dump the page table entries.
-    walk_page_tables: bool,
+    pub walk_page_tables: bool,
     /// TImeout in seconds for the UEFI watchdog.
-    watchdog_seconds: Option<usize>,
+    pub watchdog_seconds: Option<usize>,
 }
 ```
 
