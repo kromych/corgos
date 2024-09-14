@@ -1,5 +1,21 @@
 # CorgOS
 
+## Setting up the build hsot
+
+### Ubuntu
+
+```bash
+sudo apt-get install clang llvm clang-tools lld
+```
+
+### Fedora
+
+```bash
+sudo dnf install clang llvm clang-tools lld
+```
+
+## Cloning the repo
+
 > This repo uses submodules. Please clone with
 > `git clone --recurse https://github.com/kromych/corgos`
 > or do
@@ -8,6 +24,8 @@
 > git submodule init
 > git submodule update
 > ```
+
+## Building and running
 
 Currently, this is a UEFI bootloader that logs to the serial port. It supports a configuration file
 to specify where to log to, and other parameters like so for `x86_64`:
