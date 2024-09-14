@@ -78,3 +78,10 @@ To build for `x86_64` and `aarch64`, run
 
 To boot with `qemu`, use `./qemu-run-x86_64.sh` or `./qemu-run-aarch64.sh`. The UEFI log
 is written to `fw.log`, the serial logs go to `serial*.log` files.
+
+## Look also
+
+Many bits and pieces like the code for the serial port support,
+self-relocation and page table manipulation have come from my
+[aarch64-lab](https://github.com/kromych/aarch64-lab) project
+and my C++ OS roject whose name was ToyOS.
