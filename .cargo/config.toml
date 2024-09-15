@@ -1,5 +1,5 @@
 [target.x86_64-unknown-linux-gnu]
-linker = "./build/link-x86_64.sh"
+linker = "./build/link-x86_64.py"
 
 [target.aarch64-unknown-linux-gnu]
-linker = "./build/link-aarch64.sh"
+linker = "./build/link-aarch64.py"

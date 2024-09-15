@@ -3,6 +3,7 @@
 /target
 /esp
 /ovmf
+build/__pycache__
 .DS_Store
 *.log
 *.img

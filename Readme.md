@@ -72,14 +72,15 @@ pub struct BootLoaderConfig {
 }
 ```
 
-To build for `x86_64` and `aarch64`, run
+To build the project and boot with `qemu`, use `./run.py -a x86_64` or `./run.py -a aarch64`.
+The UEFI log is written to `fw.log`, the serial logs go to `serial*.log` files.
+
+To only build the project, use
 
 ```sh
-./build.sh
+# Add '-r' for the release build
+./run.py -b
 ```
-
-To boot with `qemu`, use `./run.py x86_64` or `./run.py aarch64`. The UEFI log
-is written to `fw.log`, the serial logs go to `serial*.log` files.
 
 ## Look also
 

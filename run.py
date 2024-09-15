@@ -5,7 +5,10 @@ import platform
 import subprocess
 import shutil
 import argparse
+import logging
 
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 NUM_PROC = 8
 MEMORY = "256M"
@@ -16,7 +19,6 @@ ARCH_CONFIG = {
     "x86_64": {
         "ovmf_code": f"{PWD}/edk2-uefi/ovmf-x64-4m/OVMF_CODE.fd",
         "ovmf_vars": f"{PWD}/edk2-uefi/ovmf-x64-4m/OVMF_VARS.fd",
-        "build_dir": f"{PWD}/target/x86_64-unknown-uefi/release",
         "boot_efi": "bootx64.efi",
         "boot_ini": "corgos-boot-x86_64.ini",
         "log_device": "com2",
@@ -26,7 +28,6 @@ ARCH_CONFIG = {
     "aarch64": {
         "ovmf_code": f"{PWD}/edk2-uefi/aarch64/QEMU_EFI-{SILENT}pflash.raw",
         "ovmf_vars": f"{PWD}/edk2-uefi/aarch64/vars-template-pflash.raw",
-        "build_dir": f"{PWD}/target/aarch64-unknown-uefi/release",
         "boot_efi": "bootaa64.efi",
         "boot_ini": "corgos-boot-aarch64.ini",
         "log_device": "\"pl011@9000000\"",
@@ -48,6 +49,7 @@ def get_git_info():
 
 
 def setup_directories():
+    logger.info("Setting up directories")
     if os.path.exists(EFI_DIR):
         shutil.rmtree(EFI_DIR)
     if os.path.exists(OVMF_DIR):
@@ -56,14 +58,19 @@ def setup_directories():
     os.makedirs(OVMF_DIR, exist_ok=True)
 
 
-def copy_files(arch):
+def copy_files(arch, release):
+    logger.info(f"Copying files for architecture {arch}, release mode: {release}")
     config = ARCH_CONFIG[arch]
+    build_type = "release" if release else "debug"
+    build_dir = f"{PWD}/target/{arch}-unknown-uefi/{build_type}"
+    
     shutil.copy(config["ovmf_code"], OVMF_DIR)
     shutil.copy(config["ovmf_vars"], OVMF_DIR)
-    shutil.copy(f"{config['build_dir']}/boot_loader.efi", f"{EFI_DIR}/efi/boot/{config['boot_efi']}")
+    shutil.copy(f"{build_dir}/boot_loader.efi", f"{EFI_DIR}/efi/boot/{config['boot_efi']}")
 
 
 def write_boot_ini(arch):
+    logger.info(f"Writing boot.ini for architecture {arch}")
     config = ARCH_CONFIG[arch]
     revision, branch, dirty, date = get_git_info()
     boot_ini_file = f"{EFI_DIR}/{config['boot_ini']}"
@@ -87,6 +94,7 @@ def get_arch_name_normalized(arch_name):
 
 
 def get_accelerator(target_arch, accel):
+    logger.info(f"Getting accelerator for architecture {target_arch}")
     system_arch = platform.machine().lower()
 
     # Disable acceleration if not native architecture or user requested no acceleration
@@ -102,11 +110,24 @@ def get_accelerator(target_arch, accel):
         return "-accel hvf"
     return ""
 
-def run_qemu(arch, accel):
+
+def build_project(arch, release):
+    logger.info(f"Building project for {arch}, release: {release}")
+    try:
+        release_flag = "--release" if release else ""
+        subprocess.run(f"cargo build {release_flag}".split() + ["--target", f"{arch}-unknown-uefi", "-p", "boot_loader"], check=True)
+        subprocess.run(f"cargo build {release_flag}".split() + ["--target", f"{arch}-unknown-linux-gnu", "-p", "kernel_start"], check=True)
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Build failed for {arch}: {e}")
+        raise
+
+
+def run_qemu(arch, accel, release):
+    logger.info(f"Running QEMU for {arch}, release: {release}")
     config = ARCH_CONFIG[arch]
     
     setup_directories()
-    copy_files(arch)
+    copy_files(arch, release)
     write_boot_ini(arch)
 
     accel_option = get_accelerator(arch, accel)
@@ -133,16 +154,33 @@ def run_qemu(arch, accel):
     subprocess.run(qemu_command, shell=False, check=True)
 
 
+def build_all_arches(release):
+    logger.info(f"Building for all architectures, release: {release}")
+    for arch in ARCH_CONFIG:
+        build_project(arch, release)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Run QEMU for CorgOS development")
-    parser.add_argument(dest='arch', choices=['x86_64', 'aarch64'],  help="Target architecture (x86_64 or aarch64)")
+    parser.add_argument('-r', '--release', action='store_true', help="Build in release mode")
     parser.add_argument('--accel', action='store_true', help="Enable hardware acceleration")
+    parser.add_argument('--build-only', action='store_true', help="Only build, do not run QEMU")
+    parser.add_argument('-b', '--build-all', action='store_true', help="Build for all architectures, do not run QEMU")
+    parser.add_argument('-a', '--arch', choices=['x86_64', 'aarch64'], help="Target architecture (x86_64 or aarch64)")
     args = parser.parse_args()
 
     try:
-        run_qemu(args.arch, args.accel)
+        if args.build_all:
+            build_all_arches(args.release)
+        else:
+            if args.arch:
+                build_project(args.arch, args.release)
+                if not args.build_only:
+                    run_qemu(args.arch, args.accel, args.release)
+            else:
+                logger.error("Please specify an architecture or use --all")
     except Exception as e:
-        print(f"Error {e}")
+        logger.error(f"Error: {e}")
 
 
 if __name__ == "__main__":
