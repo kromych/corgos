@@ -23,6 +23,7 @@ use uefi::table::boot::MemoryType;
 use uefi::table::runtime::ResetType;
 use uefi::CStr16;
 use uefi::Status;
+use uefi_guids;
 
 /// The name of the configuration file in the ESP partition alongside the loader.
 #[cfg(target_arch = "x86_64")]
@@ -271,6 +272,21 @@ fn report_uefi_info() {
         fw_revision >> 16,
         fw_revision as u16
     );
+    let table_count = system::with_config_table(|tables| tables.len());
+    log::info!(
+        "Reported {table_count} configuration tables, known {}",
+        uefi_guids::get_uefi_known_guids_count()
+    );
+    system::with_config_table(|tables| {
+        for table in tables {
+            let name = uefi_guids::get_uefi_table_name(&table.guid);
+            log::info!(
+                "Table {} @ {:#016x}: {name}",
+                table.guid,
+                table.address as u64
+            );
+        }
+    });
 }
 
 fn arch_name() -> &'static str {

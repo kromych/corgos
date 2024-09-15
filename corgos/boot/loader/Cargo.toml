@@ -7,6 +7,9 @@ edition = "2021"
 # Has support for the aarch64 UEFI target
 rust-version = "1.81"
 
+[features]
+all_uefi_table_guids = ["uefi_guids/all_uefi_table_guids"]
+
 [dependencies]
 bitfield-struct.workspace = true
 uefi.workspace = true
@@ -18,3 +21,4 @@ raw-cpuid.workspace = true
 boot_logger.workspace = true
 ini_file.workspace = true
 semihosting.workspace = true
+uefi_guids.workspace = true

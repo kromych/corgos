@@ -117,8 +117,10 @@ def build_project(arch, release):
     logger.info(f"Building project for {arch}, release: {release}")
     try:
         release_flag = "--release" if release else ""
-        subprocess.run(f"cargo build {release_flag}".split() + ["--target", f"{arch}-unknown-uefi", "-p", "boot_loader"], check=True)
-        subprocess.run(f"cargo build {release_flag}".split() + ["--target", f"{arch}-unknown-linux-gnu", "-p", "kernel_start"], check=True)
+        subprocess.run(f"cargo build {release_flag}".split() + 
+                       ["--target", f"{arch}-unknown-uefi", "-p", "boot_loader", "--features", "boot_loader/all_uefi_table_guids"], check=True)
+        subprocess.run(f"cargo build {release_flag}".split() + 
+                       ["--target", f"{arch}-unknown-linux-gnu", "-p", "kernel_start"], check=True)
     except subprocess.CalledProcessError as e:
         logger.error(f"Build failed for {arch}: {e}")
         raise

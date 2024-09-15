@@ -7,6 +7,7 @@ members = [
   "corgos/kernel/start",
   "support/ini_file",
   "support/semihosting",
+  "support/uefi_guids"
 ]
 
 [workspace.dependencies]
@@ -24,6 +25,7 @@ boot_logger = { path = "corgos/boot/logger" }
 boot_uart = { path = "corgos/boot/uart" }
 kernel_start = { path = "corgos/kernel/start" }
 semihosting = { path = "support/semihosting" }
+uefi_guids = { path = "support/uefi_guids" }
 
 [profile.release]
 panic = "abort"

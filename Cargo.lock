@@ -43,6 +43,7 @@ dependencies = [
  "raw-cpuid",
  "semihosting",
  "uefi",
+ "uefi_guids",
 ]
 
 [[package]]
@@ -244,6 +245,13 @@ dependencies = [
  "bitflags",
  "ptr_meta",
  "uguid",
+]
+
+[[package]]
+name = "uefi_guids"
+version = "0.0.0"
+dependencies = [
+ "uefi",
 ]
 
 [[package]]

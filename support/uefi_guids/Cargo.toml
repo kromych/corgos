@@ -1,0 +1,11 @@
+[package]
+name = "uefi_guids"
+version = "0.0.0"
+authors = ["kromych"]
+edition = "2021"
+
+[features]
+all_uefi_table_guids = []
+
+[dependencies]
+uefi.workspace = true
