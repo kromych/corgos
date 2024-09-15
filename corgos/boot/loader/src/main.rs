@@ -84,9 +84,10 @@ fn parse_config(bytes: &[u8]) -> Option<BootLoaderConfig> {
                 config.walk_page_tables =
                     value == b"yes" || value == b"on" || value == b"1" || value == b"true"
             }
-            b"revision" => log::trace!("Revision '{}'", unsafe {
-                core::str::from_utf8_unchecked(value)
-            }),
+            b"revision" => {
+                let len = core::cmp::min(value.len(), config.revision.len());
+                config.revision[..len].copy_from_slice(&value[..len])
+            }
             b"watchdog_seconds" => {
                 if let Ok(watchdog_seconds) =
                     core::str::from_utf8(value).unwrap_or_default().parse()
@@ -423,7 +424,11 @@ fn main() -> Status {
     }
     boot_logger::setup_logger(&config);
 
-    log::info!("Loading **CorgOS/{}**", arch_name());
+    log::info!(
+        "Loading **CorgOS/{}**, \"{}\"",
+        arch_name(),
+        config.revision_str()
+    );
     report_boot_processor_info();
     if config.walk_page_tables {
         walk_page_tables();

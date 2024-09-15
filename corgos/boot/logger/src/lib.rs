@@ -11,8 +11,12 @@ use log::LevelFilter;
 use uefi::boot;
 use uefi::proto::console::text::Output;
 
+pub const MAX_REVISION_SIZE: usize = 64;
+
 #[derive(Debug, Clone)]
 pub struct BootLoaderConfig {
+    /// Git revision and some data about the latest change.
+    pub revision: [u8; MAX_REVISION_SIZE],
     /// The target device for boot logging.
     pub log_device: LogDevice,
     /// Verbosity for logging.
@@ -30,6 +34,7 @@ pub struct BootLoaderConfig {
 impl Default for BootLoaderConfig {
     fn default() -> Self {
         Self {
+            revision: [0; MAX_REVISION_SIZE],
             log_device: LogDevice::StdOut,
             log_level: LevelFilter::Trace,
             log_source_path: false,
@@ -37,6 +42,17 @@ impl Default for BootLoaderConfig {
             walk_page_tables: false,
             watchdog_seconds: None,
         }
+    }
+}
+
+impl BootLoaderConfig {
+    pub fn revision_str(&self) -> &str {
+        let len = self
+            .revision
+            .iter()
+            .position(|&x| x == 0)
+            .unwrap_or(self.revision.len());
+        unsafe { core::str::from_utf8_unchecked(&self.revision[..len]) }
     }
 }
 
@@ -173,6 +189,4 @@ pub fn setup_logger(config: &BootLoaderConfig) {
 
     log::set_logger(logger).unwrap();
     log::set_max_level(config.log_level);
-
-    log::trace!("{config:x?}, {logger:x?}");
 }
