@@ -78,7 +78,7 @@ To build for `x86_64` and `aarch64`, run
 ./build.sh
 ```
 
-To boot with `qemu`, use `./qemu-run-x86_64.sh` or `./qemu-run-aarch64.sh`. The UEFI log
+To boot with `qemu`, use `./run.py x86_64` or `./run.py aarch64`. The UEFI log
 is written to `fw.log`, the serial logs go to `serial*.log` files.
 
 ## Look also
