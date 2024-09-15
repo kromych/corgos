@@ -18,9 +18,6 @@ raw-cpuid = { version = "11", default-features = false }
 spinning_top = "0.3"
 uefi = { version = "0.32", default-features = false }
 
-tock-registers = { version = "0.9", default-features = false }
-aarch64-cpu = "9.3"
-
 ini_file = { path = "support/ini_file" }
 boot_loader = { path = "corgos/boot/loader" }
 boot_logger = { path = "corgos/boot/logger" }

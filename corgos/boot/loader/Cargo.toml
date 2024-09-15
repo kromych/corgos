@@ -14,8 +14,6 @@ log.workspace = true
 elf.workspace = true
 
 raw-cpuid.workspace = true
-tock-registers.workspace = true
-aarch64-cpu.workspace = true
 
 boot_logger.workspace = true
 ini_file.workspace = true

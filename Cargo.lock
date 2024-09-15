@@ -3,15 +3,6 @@
 version = 3
 
 [[package]]
-name = "aarch64-cpu"
-version = "9.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac42a04a61c19fc8196dd728022a784baecc5d63d7e256c01ad1b3fbfab26287"
-dependencies = [
- "tock-registers 0.8.1",
-]
-
-[[package]]
 name = "autocfg"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -44,7 +35,6 @@ checksum = "b048fb63fd8b5923fc5aa7b340d8e156aec7ec02f0c78fa8a6ddc2613f6f71de"
 name = "boot_loader"
 version = "0.0.0"
 dependencies = [
- "aarch64-cpu",
  "bitfield-struct",
  "boot_logger",
  "elf",
@@ -52,7 +42,6 @@ dependencies = [
  "log",
  "raw-cpuid",
  "semihosting",
- "tock-registers 0.9.0",
  "uefi",
 ]
 
@@ -209,18 +198,6 @@ dependencies = [
  "quote",
  "unicode-ident",
 ]
-
-[[package]]
-name = "tock-registers"
-version = "0.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "696941a0aee7e276a165a978b37918fd5d22c55c3d6bda197813070ca9c0f21c"
-
-[[package]]
-name = "tock-registers"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b9e2fdb3a1e862c0661768b7ed25390811df1947a8acbfbefe09b47078d93c4"
 
 [[package]]
 name = "ucs2"
