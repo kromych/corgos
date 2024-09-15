@@ -354,8 +354,8 @@ fn wait_for_start() {
     }
 }
 
-#[cfg(target_os = "uefi")]
-#[panic_handler]
+#[cfg_attr(target_os = "uefi", panic_handler)]
+#[cfg_attr(not(target_os = "uefi"), allow(dead_code))]
 fn panic(panic: &core::panic::PanicInfo<'_>) -> ! {
     log::error!("{panic}");
 
@@ -368,16 +368,19 @@ fn panic(panic: &core::panic::PanicInfo<'_>) -> ! {
         (0, 0)
     };
 
-    // On the real hardware, the qemu exit shouldn't work.
-    // Prob no harm.
-    use qemu_exit::QEMUExit;
+    {
+        // Needs `-semihosting` or `isa-debug-exit` on the qemu's command line.
+        let smh = semihosting::Semihosting;
+
+        // TODO: Might be divergent or cause a hardware failure.
+        // TODO: detect if running under QEMU.
+        smh.exit_host_failure();
+        log::error!("Hit `Ctrl+A X` if running under QEMU, and it is not exiting");
+    }
 
     #[cfg(target_arch = "x86_64")]
     #[allow(unreachable_code)]
     {
-        let qemu_exit_handle = qemu_exit::X86::new(0xf4, 0xf);
-        qemu_exit_handle.exit_failure();
-
         loop {
             unsafe {
                 asm!("cli", options(nomem, nostack));
@@ -395,10 +398,6 @@ fn panic(panic: &core::panic::PanicInfo<'_>) -> ! {
     #[cfg(target_arch = "aarch64")]
     #[allow(unreachable_code)]
     {
-        // needs `-semihosting` on the qemu's command line.
-        let qemu_exit_handle = qemu_exit::AArch64::new();
-        qemu_exit_handle.exit_failure();
-
         loop {
             unsafe {
                 asm!("wfe",

@@ -50,8 +50,8 @@ dependencies = [
  "elf",
  "ini_file",
  "log",
- "qemu-exit",
  "raw-cpuid",
+ "semihosting",
  "tock-registers 0.9.0",
  "uefi",
 ]
@@ -152,12 +152,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "qemu-exit"
-version = "3.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8bb0fd6580eeed0103c054e3fba2c2618ff476943762f28a645b63b8692b21c9"
-
-[[package]]
 name = "quote"
 version = "1.0.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -180,6 +174,10 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "semihosting"
+version = "0.0.0"
 
 [[package]]
 name = "spinning_top"

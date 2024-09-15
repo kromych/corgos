@@ -11,28 +11,30 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 NUM_PROC = 8
-MEMORY = "256M"
+MEMORY = "8192M"
 SILENT = "silent-"
 PWD = os.getcwd()
 
 ARCH_CONFIG = {
     "x86_64": {
+        "cpu": "SandyBridge,-tsc-deadline",
+        "machine": "q35",
+        "semihosting": "-device isa-debug-exit",
+        "log_device": "com2",
         "ovmf_code": f"{PWD}/edk2-uefi/ovmf-x64-4m/OVMF_CODE.fd",
         "ovmf_vars": f"{PWD}/edk2-uefi/ovmf-x64-4m/OVMF_VARS.fd",
         "boot_efi": "bootx64.efi",
         "boot_ini": "corgos-boot-x86_64.ini",
-        "log_device": "com2",
-        "machine": "q35",
-        "semihosting": "-device isa-debug-exit,iobase=0xf4,iosize=0x04"
     },
     "aarch64": {
+        "cpu": "cortex-a72",
+        "machine": "virt",
+        "semihosting": "-semihosting",
+        "log_device": "\"pl011@9000000\"",
         "ovmf_code": f"{PWD}/edk2-uefi/aarch64/QEMU_EFI-{SILENT}pflash.raw",
         "ovmf_vars": f"{PWD}/edk2-uefi/aarch64/vars-template-pflash.raw",
         "boot_efi": "bootaa64.efi",
         "boot_ini": "corgos-boot-aarch64.ini",
-        "log_device": "\"pl011@9000000\"",
-        "machine": "virt",
-        "semihosting": "--semihosting"
     }
 }
 
@@ -130,16 +132,18 @@ def run_qemu(arch, accel, release):
     copy_files(arch, release)
     write_boot_ini(arch)
 
+    cpu = "host" if accel else config['cpu'];
+    semihosting = "" if accel else config['semihosting']
     accel_option = get_accelerator(arch, accel)
     qemu_command = f"""
         qemu-system-{arch} 
             -nodefaults -s
             -machine {config['machine']}
             {accel_option}
-            -cpu max
+            -cpu {cpu}
             -m {MEMORY}
             -smp {NUM_PROC}
-            {config['semihosting']}
+            {semihosting}
             -chardev stdio,id=char0,mux=on,logfile=serial1.log,signal=off
             -chardev file,id=fwdebug,path=fw.log
             -serial chardev:char0
@@ -151,6 +155,7 @@ def run_qemu(arch, accel, release):
             -drive if=pflash,format=raw,file={OVMF_DIR}/{os.path.basename(config['ovmf_vars'])}
             -nographic
     """.split()
+    logger.info(f"Running `{" ".join(qemu_command)}`")
     subprocess.run(qemu_command, shell=False, check=True)
 
 

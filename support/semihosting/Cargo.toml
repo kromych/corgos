@@ -1,0 +1,5 @@
+[package]
+name = "semihosting"
+version = "0.0.0"
+authors = ["kromych"]
+edition = "2021"

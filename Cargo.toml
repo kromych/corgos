@@ -6,6 +6,7 @@ members = [
   "corgos/boot/uart",
   "corgos/kernel/start",
   "support/ini_file",
+  "support/semihosting",
 ]
 
 [workspace.dependencies]
@@ -13,7 +14,6 @@ bitfield-struct = { version = "0.4", default-features = false }
 conquer-once = { version = "0.4", default-features = false }
 elf = { version = "0.7", default-features = false }
 log = { version = "0.4", default-features = false }
-qemu-exit = { version = "3", default-features = false }
 raw-cpuid = { version = "11", default-features = false }
 spinning_top = "0.3"
 uefi = { version = "0.32", default-features = false }
@@ -26,6 +26,7 @@ boot_loader = { path = "corgos/boot/loader" }
 boot_logger = { path = "corgos/boot/logger" }
 boot_uart = { path = "corgos/boot/uart" }
 kernel_start = { path = "corgos/kernel/start" }
+semihosting = { path = "support/semihosting" }
 
 [profile.release]
 panic = "abort"
