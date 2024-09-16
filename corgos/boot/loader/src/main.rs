@@ -519,6 +519,8 @@ fn load_kernel_from_elf() {
         // }
     }
 
+    log::info!("Kernel entry point: {:#016x}", elf.ehdr.e_entry);
+
     todo!("Map the kernel code and data approriately");
 }
 
