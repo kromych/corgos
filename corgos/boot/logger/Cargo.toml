@@ -10,4 +10,4 @@ log.workspace = true
 spinning_top.workspace = true
 conquer-once.workspace = true
 
-boot_uart.workspace = true
+poll_uart.workspace = true

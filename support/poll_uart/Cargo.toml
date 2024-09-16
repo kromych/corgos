@@ -1,5 +1,5 @@
 [package]
-name = "boot_uart"
+name = "poll_uart"
 version = "0.0.0"
 authors = ["kromych"]
 edition = "2021"

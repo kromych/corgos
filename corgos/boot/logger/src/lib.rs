@@ -1,15 +1,22 @@
 #![no_std]
 
+//! Logging facilities for the bootloader.
+//!
+//! While UEFI offers the serial output, that works only when
+//! the boot services are still active. Due to this, a UART with
+//! polling is used.
+
 use core::fmt::Write;
 
-use boot_uart::BaudDivisor;
-use boot_uart::ComPort;
-use boot_uart::ComPortIo;
-use boot_uart::Pl011;
 use conquer_once::spin::OnceCell;
 use log::LevelFilter;
+use poll_uart::BaudDivisor;
+use poll_uart::ComPort;
+use poll_uart::ComPortIo;
+use poll_uart::Pl011;
 use uefi::boot;
 use uefi::proto::console::text::Output;
+use uefi::table;
 
 pub const MAX_REVISION_SIZE: usize = 64;
 
@@ -111,11 +118,14 @@ impl log::Log for BootLogger {
         match &self.output {
             None => {}
             Some(LogOutput::Stdout) => {
-                let stdout =
-                    boot::get_handle_for_protocol::<Output>().expect("can get stdout handle");
-                let mut stdout =
-                    boot::open_protocol_exclusive::<Output>(stdout).expect("can open stdout");
-                self.write(&mut *stdout, record);
+                if table::system_table_raw().is_some() {
+                    // Boot services are still acive.
+                    let stdout =
+                        boot::get_handle_for_protocol::<Output>().expect("can get stdout handle");
+                    let mut stdout =
+                        boot::open_protocol_exclusive::<Output>(stdout).expect("can open stdout");
+                    self.write(&mut *stdout, record);
+                }
             }
             Some(LogOutput::Com(mut serial_port)) => {
                 self.write(&mut serial_port, record);

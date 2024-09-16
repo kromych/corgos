@@ -20,7 +20,7 @@ ARCH_CONFIG = {
         "cpu": "SandyBridge,-tsc-deadline",
         "machine": "q35",
         "semihosting": "-device isa-debug-exit",
-        "log_device": "com2",
+        "log_device": "com1",
         "ovmf_code": f"{PWD}/edk2-uefi/ovmf-x64-4m/OVMF_CODE.fd",
         "ovmf_vars": f"{PWD}/edk2-uefi/ovmf-x64-4m/OVMF_VARS.fd",
         "boot_efi": "bootx64.efi",

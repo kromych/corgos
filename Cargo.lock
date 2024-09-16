@@ -61,16 +61,12 @@ dependencies = [
 name = "boot_logger"
 version = "0.0.0"
 dependencies = [
- "boot_uart",
  "conquer-once",
  "log",
+ "poll_uart",
  "spinning_top",
  "uefi",
 ]
-
-[[package]]
-name = "boot_uart"
-version = "0.0.0"
 
 [[package]]
 name = "cfg-if"
@@ -122,6 +118,10 @@ name = "log"
 version = "0.4.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7a70ba024b9dc04c27ea2f0c0548feb474ec5c54bba33a7f72f873a39d07b24"
+
+[[package]]
+name = "poll_uart"
+version = "0.0.0"
 
 [[package]]
 name = "proc-macro2"
