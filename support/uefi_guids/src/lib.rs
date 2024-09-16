@@ -9,6 +9,26 @@ pub struct UefiTableGuidName {
     pub name: &'static str,
 }
 
+// Some tables EDK II uses.
+
+pub const EFI_DXE_SERVICES_TABLE_GUID: uefi::Guid = guid!("05ad34ba-6f02-4214-952e-4da0398e2bb9");
+pub const MEMORY_STATUS_CODE_RECORD_GUID: uefi::Guid =
+    guid!("060cc026-4c0d-4dda-8f41-595fef00a502");
+pub const EFI_DEBUG_IMAGE_INFO_TABLE_GUID: uefi::Guid =
+    guid!("49152e77-1ada-4764-b7a2-7afefed95e8b");
+pub const EFI_MEMORY_TYPE_INFORMATION_GUID: uefi::Guid =
+    guid!("4c19049f-4137-4dd3-9c10-8b97a83ffdfa");
+pub const EFI_HOB_LIST_GUID: uefi::Guid = guid!("7739f24c-93d7-11d4-9a3a-0090273fc14d");
+pub const EFI_ACPI20_TABLE_GUID: uefi::Guid = guid!("8868e871-e4f1-11d3-bc22-0080c73c8881");
+pub const EFI_MEMORY_ATTRIBUTES_TABLE_GUID: uefi::Guid =
+    guid!("dcfa911d-26eb-469f-a220-38b7dc461220");
+pub const EFI_ACPI10_TABLE_GUID: uefi::Guid = guid!("eb9d2d30-2d88-11d3-9a16-0090273fc14d");
+pub const EFI_SMBIOS_TABLE_GUID: uefi::Guid = guid!("eb9d2d31-2d88-11d3-9a16-0090273fc14d");
+pub const LZMA_CUSTOM_DECOMPRESS_GUID: uefi::Guid = guid!("ee4e5898-3914-4259-9d6e-dc7bd79403cf");
+pub const EFI_SMBIOS3_TABLE_GUID: uefi::Guid = guid!("f2fd1544-9794-4a2c-992e-e5bbcf20e394");
+pub const EFI_CRC32_GUIDED_SECTION_EXTRACTION_GUID: uefi::Guid =
+    guid!("fc1bcdb0-7d31-49aa-936a-a4600d9dd083");
+
 /// Known UEFI table GUIDs.
 /// NOTE: Keep sorted by the GUID!
 #[cfg(not(feature = "all_uefi_table_guids"))]

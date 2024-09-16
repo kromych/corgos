@@ -272,12 +272,15 @@ fn report_uefi_info() {
         fw_revision >> 16,
         fw_revision as u16
     );
+
     let table_count = system::with_config_table(|tables| tables.len());
     log::info!(
         "Reported {table_count} configuration tables, known {}",
         uefi_guids::get_uefi_known_guids_count()
     );
-    system::with_config_table(|tables| {
+
+    let rsdp = system::with_config_table(|tables| {
+        let mut rsdp_addr: Option<*const core::ffi::c_void> = None;
         for table in tables {
             let name = uefi_guids::get_uefi_table_name(&table.guid);
             log::info!(
@@ -285,8 +288,23 @@ fn report_uefi_info() {
                 table.guid,
                 table.address as u64
             );
+            if table.guid == uefi_guids::EFI_ACPI20_TABLE_GUID {
+                rsdp_addr = Some(table.address);
+            }
         }
-    });
+        rsdp_addr
+    })
+    .expect("Must be able to locate ACPI 2.0 FADT");
+
+    let rsdp: *const acpi::rsdp::Rsdp = rsdp.cast();
+    let rsdp = unsafe {
+        rsdp.as_ref()
+            .expect("Must be a non-NULL point to ACPI 2.0 RSDP")
+    };
+    rsdp.validate().expect("Must have a valid ACPI 2.0 RSDP");
+    assert!(rsdp.revision() == 2, "Expected ACPI 2.0 RSDP");
+
+    log::info!("ACPI 2.0 RSDP {rsdp:x?}");
 }
 
 fn arch_name() -> &'static str {

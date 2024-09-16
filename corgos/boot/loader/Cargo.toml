@@ -11,6 +11,7 @@ rust-version = "1.81"
 all_uefi_table_guids = ["uefi_guids/all_uefi_table_guids"]
 
 [dependencies]
+acpi.workspace = true
 bitfield-struct.workspace = true
 uefi.workspace = true
 log.workspace = true
