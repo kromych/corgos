@@ -8,13 +8,17 @@ mod aarch64_regs;
 use boot_logger::BootLoaderConfig;
 use boot_logger::LogDevice;
 use core::arch::asm;
+use elf::endian::LittleEndian;
+use elf::ElfBytes;
 use log::LevelFilter;
 use uefi::boot;
+use uefi::boot::AllocateType;
 use uefi::mem::memory_map::MemoryMap;
 use uefi::mem::memory_map::MemoryMapMut;
 use uefi::proto::console::text::Input;
 use uefi::proto::media::file::File;
 use uefi::proto::media::file::FileAttribute;
+use uefi::proto::media::file::FileInfo;
 use uefi::proto::media::file::FileMode;
 use uefi::proto::media::fs::SimpleFileSystem;
 use uefi::runtime;
@@ -30,6 +34,9 @@ use uefi_guids;
 const CORGOS_INI: &CStr16 = uefi::cstr16!("corgos-boot-x86_64.ini");
 #[cfg(target_arch = "aarch64")]
 const CORGOS_INI: &CStr16 = uefi::cstr16!("corgos-boot-aarch64.ini");
+
+/// The name of the CorgOS kernel binary image.
+const CORGOS_KERNEL: &CStr16 = uefi::cstr16!("corgos");
 
 /// Upon panic, b"CORGBARF" is loaded into R8. R9 contains the address of the file name,
 /// R10 contains the line number in the least significant 32 bits, and the column number
@@ -388,6 +395,133 @@ fn wait_for_start() {
     }
 }
 
+fn load_kernel_from_elf() {
+    let sfs = boot::get_handle_for_protocol::<SimpleFileSystem>()
+        .expect("SimpleFileSystem must be available");
+    let mut sfs = boot::open_protocol_exclusive::<SimpleFileSystem>(sfs)
+        .expect("SimpleFileSystem must be opened");
+    let mut root = sfs.open_volume().expect("Failed to open root volume");
+
+    let kernel_file = root
+        .open(CORGOS_KERNEL, FileMode::Read, FileAttribute::empty())
+        .expect("Failed to open kernel image");
+
+    let mut kernel_file = kernel_file
+        .into_regular_file()
+        .expect("Failed to convert to a regular file");
+
+    let elf_data_size = {
+        let mut file_info_buf = [0u8; 512];
+        let file_info = kernel_file
+            .get_info::<FileInfo>(&mut file_info_buf)
+            .expect("Failed to get file info");
+
+        let file_size = file_info.file_size() as usize;
+        (file_size as usize + 0xFFF) & !0xFFF
+    };
+    assert!(elf_data_size & 0xFFF == 0);
+
+    log::info!("Kernel file size {elf_data_size} bytes, rounded up to 4KiB");
+
+    let elf_data = boot::allocate_pages(
+        AllocateType::AnyPages,
+        MemoryType::LOADER_DATA,
+        elf_data_size / 0x1000,
+    )
+    .expect("Failed to allocate pages to read the kernel image")
+    .as_ptr();
+    let elf_data = unsafe { core::slice::from_raw_parts_mut(elf_data, elf_data_size) };
+
+    kernel_file
+        .read(elf_data)
+        .expect("Cannot read the kernel image");
+    // Downgrade to immutable.
+    let elf_data = &elf_data[..elf_data_size];
+
+    let elf = ElfBytes::<LittleEndian>::minimal_parse(elf_data)
+        .expect("Cannot parse the kernel image as ELF");
+
+    #[cfg(target_arch = "aarch64")]
+    assert!(
+        elf.ehdr.e_machine == elf::abi::EM_AARCH64,
+        "Wrong kernel target arch, expected aarch64"
+    );
+
+    #[cfg(target_arch = "x86_64")]
+    assert!(
+        elf.ehdr.e_machine == elf::abi::EM_X86_64,
+        "Wrong kernel target arch, expected x86_64"
+    );
+
+    let mut loaded_size = 0;
+    let segments = elf
+        .segments()
+        .expect("Cannot find segments in the ELF file");
+
+    // First pass: see how much data is going to be loaded.
+    for ph in segments {
+        log::info!(
+            "Found segment of {} bytes ({} in the image), PA: {:#016x}, VA: {:#016x}",
+            ph.p_memsz,
+            ph.p_filesz,
+            ph.p_paddr,
+            ph.p_vaddr
+        );
+
+        if ph.p_type != elf::abi::PT_LOAD {
+            continue;
+        }
+        loaded_size += (ph.p_memsz + 0xFFF) & !0xFFF;
+
+        log::info!("Will load the segment");
+    }
+
+    assert!(loaded_size & 0xFFF == 0);
+
+    log::info!("Loaded image size will be {loaded_size} bytes, rounded up to 4KiB");
+
+    let loaded_data = boot::allocate_pages(
+        AllocateType::AnyPages,
+        MemoryType::LOADER_DATA, // TODO: Set some special memory type
+        (loaded_size / 0x1000) as usize,
+    )
+    .expect("Failed to allocate pages")
+    .as_ptr();
+    let _loaded_data =
+        unsafe { core::slice::from_raw_parts_mut(loaded_data, loaded_size as usize) };
+
+    // Second pass: load the code and data.
+    let mut _bytes_loaded = 0;
+    for ph in segments {
+        if ph.p_type != elf::abi::PT_LOAD {
+            continue;
+        }
+        log::info!(
+            "Loading segment of {} bytes ({} in the image), PA: {:#016x}, VA: {:#016x}",
+            ph.p_memsz,
+            ph.p_filesz,
+            ph.p_paddr,
+            ph.p_vaddr
+        );
+
+        // TODO: copy, round up to a page.
+
+        // if ph.p_filesz != 0 {
+        //     // Copy segment data to the allocated memory
+        //     let src_data = &elf_data[ph.p_offset as usize..(ph.p_offset + ph.p_filesz) as usize];
+        //     dst.copy_from_slice(src_data);
+        // } else {
+        //     // If memory size is greater than file size, zero out the rest (clean BSS)
+        //     let zeroed_region = unsafe {
+        //         core::slice::from_raw_parts_mut(segment_address as *mut u8, ph.p_memsz as usize)
+        //     };
+        //     zeroed_region.fill(0);
+        // }
+    }
+
+    todo!("Map the kernel code and data approriately");
+}
+
 #[cfg_attr(target_os = "uefi", panic_handler)]
 #[cfg_attr(not(target_os = "uefi"), allow(dead_code))]
 fn panic(panic: &core::panic::PanicInfo<'_>) -> ! {
@@ -478,13 +612,14 @@ fn main() -> Status {
         return Status::ABORTED;
     }
 
-    let mut memory_map = unsafe { boot::exit_boot_services(MemoryType(0x70000000)) };
+    load_kernel_from_elf();
 
+    let mut memory_map = unsafe { boot::exit_boot_services(MemoryType(0x70000000)) };
     memory_map.sort();
     log::info!("Memory map has {} entries", memory_map.entries().len());
     for entry in memory_map.entries() {
         log::info!("Memory map: {entry:x?}")
     }
 
-    panic!("Could not load the system");
+    todo!("Transfer to the kernel");
 }

@@ -64,11 +64,13 @@ def copy_files(arch, release):
     logger.info(f"Copying files for architecture {arch}, release mode: {release}")
     config = ARCH_CONFIG[arch]
     build_type = "release" if release else "debug"
-    build_dir = f"{PWD}/target/{arch}-unknown-uefi/{build_type}"
+    loader_build_dir = f"{PWD}/target/{arch}-unknown-uefi/{build_type}"
+    kernel_build_dir = f"{PWD}/target/{arch}-unknown-linux-gnu/{build_type}"
     
     shutil.copy(config["ovmf_code"], OVMF_DIR)
     shutil.copy(config["ovmf_vars"], OVMF_DIR)
-    shutil.copy(f"{build_dir}/boot_loader.efi", f"{EFI_DIR}/efi/boot/{config['boot_efi']}")
+    shutil.copy(f"{loader_build_dir}/boot_loader.efi", f"{EFI_DIR}/efi/boot/{config['boot_efi']}")
+    shutil.copy(f"{kernel_build_dir}/kernel_start", f"{EFI_DIR}/corgos")
 
 
 def write_boot_ini(arch):
