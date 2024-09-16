@@ -99,16 +99,16 @@ pub mod aarch64 {
     }};
 }
 
-    const SYS_OPEN: u32 = 0x01;
-    const SYS_CLOSE: u32 = 0x02;
+    const _SYS_OPEN: u32 = 0x01; // Special file ":semihosting-features" is used to communicate features.
+    const _SYS_CLOSE: u32 = 0x02;
     const SYS_WRITEC: u32 = 0x03;
     const SYS_WRITE0: u32 = 0x04;
-    const SYS_WRITE: u32 = 0x05;
-    const SYS_READ: u32 = 0x06;
-    const SYS_READC: u32 = 0x07;
-    const SYS_FLEN: u32 = 0x0c;
+    const _SYS_WRITE: u32 = 0x05;
+    const _SYS_READ: u32 = 0x06;
+    const _SYS_READC: u32 = 0x07;
+    const _SYS_FLEN: u32 = 0x0c;
     const SYS_EXIT: u32 = 0x18;
-    const SYS_ERRNO: u32 = 0x13;
+    const _SYS_ERRNO: u32 = 0x13;
 
     impl Semihosting {
         /// Might be divergent if semihosting is present,
