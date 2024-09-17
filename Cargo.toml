@@ -5,6 +5,7 @@ members = [
   "corgos/boot/logger",
   "corgos/kernel/start",
   "support/ini_file",
+  "support/page_bitmap",
   "support/poll_uart",
   "support/semihosting",
   "support/uefi_guids"
@@ -24,6 +25,7 @@ ini_file = { path = "support/ini_file" }
 boot_loader = { path = "corgos/boot/loader" }
 boot_logger = { path = "corgos/boot/logger" }
 kernel_start = { path = "corgos/kernel/start" }
+page_bitmap = { path = "support/page_bitmap" }
 poll_uart = { path = "support/poll_uart" }
 semihosting = { path = "support/semihosting" }
 uefi_guids = { path = "support/uefi_guids" }
