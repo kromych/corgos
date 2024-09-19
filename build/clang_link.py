@@ -11,3 +11,5 @@ def link(target):
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     print(result.stdout)
     print(result.stderr, file=sys.stderr)
+
+    return result
