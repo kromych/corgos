@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use bitfield_struct::bitfield;
 
 #[derive(Debug)]
@@ -9,15 +11,13 @@ pub enum El {
     EL3 = 0b11,
 }
 
-impl From<El> for u64 {
-    fn from(val: El) -> Self {
-        val as u64
+impl El {
+    const fn into_bits(self) -> u64 {
+        self as u64
     }
-}
 
-impl From<u64> for El {
-    fn from(val: u64) -> Self {
-        match val {
+    const fn from_bits(bits: u64) -> Self {
+        match bits {
             0b00 => El::EL0,
             0b01 => El::EL1,
             0b10 => El::EL2,
@@ -37,7 +37,7 @@ pub struct CurrentEl {
     _mbz1: u64,
 }
 
-#[bitfield(u64)]
+#[bitfield(u64, default = false)]
 pub struct SystemControlEl1 {
     #[bits(1)]
     pub m: u64,
@@ -175,7 +175,7 @@ impl Default for SystemControlEl1 {
 }
 
 // Must be aligned to a 2KB boundary
-#[bitfield(u64)]
+#[bitfield(u64, default = false)]
 pub struct VectorBaseEl1 {
     #[bits(11)]
     _mbz0: u64,
@@ -183,13 +183,13 @@ pub struct VectorBaseEl1 {
     pub vbar_shift_11: u64,
 }
 
-#[bitfield(u64)]
+#[bitfield(u64, default = false)]
 pub struct ExceptionLinkEl1 {
     #[bits(64)]
     pub bits: u64,
 }
 
-#[bitfield(u64)]
+#[bitfield(u64, default = false)]
 pub struct ExceptionSyndromeEl1 {
     #[bits(64)]
     pub bits: u64,
@@ -207,14 +207,12 @@ pub enum SavedProgramStateMode {
     EL3h = 0b1101,
 }
 
-impl From<SavedProgramStateMode> for u64 {
-    fn from(value: SavedProgramStateMode) -> Self {
-        value as u64
+impl SavedProgramStateMode {
+    const fn into_bits(self) -> u64 {
+        self as u64
     }
-}
 
-impl From<u64> for SavedProgramStateMode {
-    fn from(value: u64) -> Self {
+    const fn from_bits(value: u64) -> Self {
         match value {
             0b0000 => SavedProgramStateMode::EL0t,
             0b0100 => SavedProgramStateMode::EL1t,
@@ -228,7 +226,7 @@ impl From<u64> for SavedProgramStateMode {
     }
 }
 
-#[bitfield(u64)]
+#[bitfield(u64, default = false)]
 #[derive(PartialEq, Eq)]
 pub struct SavedProgramStateEl1 {
     #[bits(4)]
@@ -244,7 +242,7 @@ pub struct SavedProgramStateEl1 {
     _rest: u64,
 }
 
-#[bitfield(u64)]
+#[bitfield(u64, default = false)]
 pub struct MainIdEl1 {
     #[bits(4)]
     pub revision: u64,
@@ -260,7 +258,7 @@ pub struct MainIdEl1 {
     _mbz0: u64,
 }
 
-#[bitfield(u64)]
+#[bitfield(u64, default = false)]
 pub struct ProcessorFeatures0El1 {
     #[bits(4)]
     pub el0: u64,
@@ -296,7 +294,7 @@ pub struct ProcessorFeatures0El1 {
     pub csv3: u64,
 }
 
-#[bitfield(u64)]
+#[bitfield(u64, default = false)]
 pub struct ProcessorFeatures1El1 {
     #[bits(4)]
     pub bt: u64,
@@ -370,15 +368,13 @@ impl Default for MemoryAttributeIndirectionEl1 {
     }
 }
 
-impl From<u64> for MemoryAttributeIndirectionEl1 {
-    fn from(value: u64) -> Self {
-        MemoryAttributeIndirectionEl1(value.to_le_bytes())
+impl MemoryAttributeIndirectionEl1 {
+    const fn into_bits(self) -> u64 {
+        u64::from_le_bytes(self.0)
     }
-}
 
-impl From<MemoryAttributeIndirectionEl1> for u64 {
-    fn from(value: MemoryAttributeIndirectionEl1) -> Self {
-        u64::from_le_bytes(value.0)
+    const fn from_bits(bits: u64) -> Self {
+        Self(bits.to_le_bytes())
     }
 }
 
@@ -390,20 +386,18 @@ pub enum TranslationGranule0 {
     _16KB = 0b10,
 }
 
-impl From<u64> for TranslationGranule0 {
-    fn from(value: u64) -> Self {
-        match value {
+impl TranslationGranule0 {
+    const fn into_bits(self) -> u64 {
+        self as u64
+    }
+
+    const fn from_bits(bits: u64) -> Self {
+        match bits {
             0b00 => TranslationGranule0::_4KB,
             0b01 => TranslationGranule0::_64KB,
             0b10 => TranslationGranule0::_16KB,
             _ => panic!("Invalid translation granule 0 representation"),
         }
-    }
-}
-
-impl From<TranslationGranule0> for u64 {
-    fn from(value: TranslationGranule0) -> Self {
-        value as u64
     }
 }
 
@@ -416,21 +410,19 @@ pub enum TranslationGranule1 {
     _64KB = 0b11,
 }
 
-impl From<u64> for TranslationGranule1 {
-    fn from(value: u64) -> Self {
-        match value {
+impl TranslationGranule1 {
+    const fn into_bits(self) -> u64 {
+        self as u64
+    }
+
+    const fn from_bits(bits: u64) -> Self {
+        match bits {
             0b00 => TranslationGranule1::_Invalid,
             0b01 => TranslationGranule1::_16KB,
             0b10 => TranslationGranule1::_4KB,
             0b11 => TranslationGranule1::_64KB,
             _ => panic!("Invalid translation granule 0 representation"),
         }
-    }
-}
-
-impl From<TranslationGranule1> for u64 {
-    fn from(value: TranslationGranule1) -> Self {
-        value as u64
     }
 }
 
@@ -448,9 +440,13 @@ pub enum IntermPhysAddrSize {
     _56_bits_64PB = 0b111,
 }
 
-impl From<u64> for IntermPhysAddrSize {
-    fn from(value: u64) -> Self {
-        match value {
+impl IntermPhysAddrSize {
+    const fn into_bits(self) -> u64 {
+        self as u64
+    }
+
+    const fn from_bits(bits: u64) -> Self {
+        match bits {
             0b000 => IntermPhysAddrSize::_32_bits_4GB,
             0b001 => IntermPhysAddrSize::_36_bits_64GB,
             0b010 => IntermPhysAddrSize::_40_bits_1TB,
@@ -464,13 +460,7 @@ impl From<u64> for IntermPhysAddrSize {
     }
 }
 
-impl From<IntermPhysAddrSize> for u64 {
-    fn from(value: IntermPhysAddrSize) -> Self {
-        value as u64
-    }
-}
-
-#[bitfield(u64)]
+#[bitfield(u64, default = false)]
 pub struct TranslationControlEl1 {
     #[bits(6)]
     pub t0sz: u64,
@@ -560,7 +550,7 @@ pub struct TranslationControlEl1 {
     _mbz2: u64,
 }
 
-#[bitfield(u64)]
+#[bitfield(u64, default = false)]
 pub struct TranslationBase0El1 {
     // #[bits(1)]
     // pub cnp: u64,
@@ -570,7 +560,7 @@ pub struct TranslationBase0El1 {
     pub asid: u64,
 }
 
-#[bitfield(u64)]
+#[bitfield(u64, default = false)]
 pub struct TranslationBase1El1 {
     // #[bits(1)]
     // pub cnp: u64,
@@ -594,9 +584,13 @@ pub enum MmfPaRange {
     _56_bits_64PB = 0b0111,
 }
 
-impl From<u64> for MmfPaRange {
-    fn from(value: u64) -> Self {
-        match value {
+impl MmfPaRange {
+    const fn into_bits(self) -> u64 {
+        self as u64
+    }
+
+    const fn from_bits(bits: u64) -> Self {
+        match bits {
             0b0000 => MmfPaRange::_32_bits_4GB,
             0b0001 => MmfPaRange::_36_bits_64GB,
             0b0010 => MmfPaRange::_40_bits_1TB,
@@ -610,12 +604,6 @@ impl From<u64> for MmfPaRange {
     }
 }
 
-impl From<MmfPaRange> for u64 {
-    fn from(value: MmfPaRange) -> Self {
-        value as u64
-    }
-}
-
 #[derive(Debug)]
 #[repr(u64)]
 #[allow(non_camel_case_types)]
@@ -624,19 +612,17 @@ pub enum MmfAsidBits {
     _16_bits_ASID = 0b0010,
 }
 
-impl From<u64> for MmfAsidBits {
-    fn from(value: u64) -> Self {
-        match value {
+impl MmfAsidBits {
+    const fn into_bits(self) -> u64 {
+        self as u64
+    }
+
+    const fn from_bits(bits: u64) -> Self {
+        match bits {
             0b0000 => MmfAsidBits::_8_bits_ASID,
             0b0010 => MmfAsidBits::_16_bits_ASID,
             _ => panic!("Invalid ASID representation"),
         }
-    }
-}
-
-impl From<MmfAsidBits> for u64 {
-    fn from(value: MmfAsidBits) -> Self {
-        value as u64
     }
 }
 
@@ -650,21 +636,19 @@ pub enum MmfTGran4KBStage2 {
     Yes_52bit = 0b0011,
 }
 
-impl From<u64> for MmfTGran4KBStage2 {
-    fn from(value: u64) -> Self {
-        match value {
+impl MmfTGran4KBStage2 {
+    const fn into_bits(self) -> u64 {
+        self as u64
+    }
+
+    const fn from_bits(bits: u64) -> Self {
+        match bits {
             0b0000 => MmfTGran4KBStage2::AsStage1,
             0b0001 => MmfTGran4KBStage2::No,
             0b0010 => MmfTGran4KBStage2::Yes,
             0b0011 => MmfTGran4KBStage2::Yes_52bit,
             _ => panic!("Invalid 4KB granule stage 2 representation"),
         }
-    }
-}
-
-impl From<MmfTGran4KBStage2> for u64 {
-    fn from(value: MmfTGran4KBStage2) -> Self {
-        value as u64
     }
 }
 
@@ -679,9 +663,13 @@ pub enum MmfTGran16KBStage2 {
     Yes_52bit = 0b0011,
 }
 
-impl From<u64> for MmfTGran16KBStage2 {
-    fn from(value: u64) -> Self {
-        match value {
+impl MmfTGran16KBStage2 {
+    const fn into_bits(self) -> u64 {
+        self as u64
+    }
+
+    const fn from_bits(bits: u64) -> Self {
+        match bits {
             0b0000 => MmfTGran16KBStage2::AsStage1,
             0b0001 => MmfTGran16KBStage2::No,
             0b0010 => MmfTGran16KBStage2::Yes,
@@ -707,20 +695,18 @@ pub enum MmfTGran64KBStage2 {
     Yes = 0b0010,
 }
 
-impl From<u64> for MmfTGran64KBStage2 {
-    fn from(value: u64) -> Self {
-        match value {
+impl MmfTGran64KBStage2 {
+    const fn into_bits(self) -> u64 {
+        self as u64
+    }
+
+    const fn from_bits(bits: u64) -> Self {
+        match bits {
             0b0000 => MmfTGran64KBStage2::AsStage1,
             0b0001 => MmfTGran64KBStage2::No,
             0b0010 => MmfTGran64KBStage2::Yes,
             _ => panic!("Invalid 16KB granule stage 2 representation"),
         }
-    }
-}
-
-impl From<MmfTGran64KBStage2> for u64 {
-    fn from(value: MmfTGran64KBStage2) -> Self {
-        value as u64
     }
 }
 
@@ -734,20 +720,18 @@ pub enum MmfTGran4KB {
     No = 0b1111,
 }
 
-impl From<u64> for MmfTGran4KB {
-    fn from(value: u64) -> Self {
-        match value {
+impl MmfTGran4KB {
+    const fn into_bits(self) -> u64 {
+        self as u64
+    }
+
+    const fn from_bits(bits: u64) -> Self {
+        match bits {
             0b0000 => MmfTGran4KB::Yes,
             0b0001 => MmfTGran4KB::Yes_52bit,
             0b1111 => MmfTGran4KB::No,
             _ => panic!("Invalid 4KB granule representation"),
         }
-    }
-}
-
-impl From<MmfTGran4KB> for u64 {
-    fn from(value: MmfTGran4KB) -> Self {
-        value as u64
     }
 }
 
@@ -761,20 +745,18 @@ pub enum MmfTGran16KB {
     Yes_52bit = 0b0010,
 }
 
-impl From<u64> for MmfTGran16KB {
-    fn from(value: u64) -> Self {
-        match value {
+impl MmfTGran16KB {
+    const fn into_bits(self) -> u64 {
+        self as u64
+    }
+
+    const fn from_bits(bits: u64) -> Self {
+        match bits {
             0b0000 => MmfTGran16KB::No,
             0b0001 => MmfTGran16KB::Yes,
             0b0010 => MmfTGran16KB::Yes_52bit,
             _ => panic!("Invalid 16KB granule representation"),
         }
-    }
-}
-
-impl From<MmfTGran16KB> for u64 {
-    fn from(value: MmfTGran16KB) -> Self {
-        value as u64
     }
 }
 
@@ -787,9 +769,13 @@ pub enum MmfTGran64KB {
     No = 0b1111,
 }
 
-impl From<u64> for MmfTGran64KB {
-    fn from(value: u64) -> Self {
-        match value {
+impl MmfTGran64KB {
+    const fn into_bits(self) -> u64 {
+        self as u64
+    }
+
+    const fn from_bits(bits: u64) -> Self {
+        match bits {
             0b0000 => MmfTGran64KB::Yes,
             0b1111 => MmfTGran64KB::No,
             _ => panic!("Invalid 64KB granule representation"),
@@ -797,13 +783,7 @@ impl From<u64> for MmfTGran64KB {
     }
 }
 
-impl From<MmfTGran64KB> for u64 {
-    fn from(value: MmfTGran64KB) -> Self {
-        value as u64
-    }
-}
-
-#[bitfield(u64)]
+#[bitfield(u64, default = false)]
 pub struct MmFeatures0El1 {
     #[bits(4)]
     pub pa_range: MmfPaRange,
@@ -837,7 +817,7 @@ pub struct MmFeatures0El1 {
     pub ecv: u64,
 }
 
-#[bitfield(u64)]
+#[bitfield(u64, default = false)]
 pub struct MmFeatures1El1 {
     #[bits(4)]
     pub hafdbs: u64,
@@ -873,7 +853,7 @@ pub struct MmFeatures1El1 {
     pub ecbhb: u64,
 }
 
-#[bitfield(u64)]
+#[bitfield(u64, default = false)]
 pub struct MmFeatures2El1 {
     #[bits(4)]
     pub cn_p: u64,
@@ -909,7 +889,7 @@ pub struct MmFeatures2El1 {
     pub e0pd: u64,
 }
 
-#[bitfield(u64)]
+#[bitfield(u64, default = false)]
 pub struct MmFeatures3El1 {
     #[bits(4)]
     pub tcrx: u64,
@@ -945,7 +925,7 @@ pub struct MmFeatures3El1 {
     pub spec_fpacc: u64,
 }
 
-#[bitfield(u64)]
+#[bitfield(u64, default = false)]
 pub struct MmFeatures4El1 {
     #[bits(4)]
     _mbz0: u64,
@@ -955,7 +935,7 @@ pub struct MmFeatures4El1 {
     _mbz1: u64,
 }
 
-#[bitfield(u64)]
+#[bitfield(u64, default = false)]
 pub struct PageTableEntry {
     pub valid: bool,
     pub table: bool, // Use PageBlockEntry if `false`
@@ -976,7 +956,7 @@ pub struct PageTableEntry {
     pub non_secure: bool,
 }
 
-#[bitfield(u64)]
+#[bitfield(u64, default = false)]
 pub struct PageBlockEntry {
     pub valid: bool,
     pub page: bool,
@@ -1046,7 +1026,7 @@ pub mod access {
             impl Aarch64Register for $register_type {
                 fn load(&mut self) {
                     let val: u64 = load_sys_reg!($register).into();
-                    *self = Self::from(val);
+                    *self = Self::from_bits(val);
                 }
 
                 fn name(&self) -> &'static str {
@@ -1054,13 +1034,13 @@ pub mod access {
                 }
 
                 fn bits(&self) -> u64 {
-                    (*self).into()
+                    (*self).into_bits()
                 }
             }
 
             impl $register_type {
                 pub fn store(&mut self) {
-                    let val: u64 = (*self).into();
+                    let val: u64 = (*self).into_bits();
                     store_sys_reg!($register, val)
                 }
             }
