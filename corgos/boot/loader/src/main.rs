@@ -27,7 +27,6 @@ use uefi::table::boot::MemoryType;
 use uefi::table::runtime::ResetType;
 use uefi::CStr16;
 use uefi::Status;
-use uefi_guids;
 
 /// The name of the configuration file in the ESP partition alongside the loader.
 #[cfg(target_arch = "x86_64")]
