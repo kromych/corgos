@@ -21,5 +21,6 @@ raw-cpuid.workspace = true
 
 boot_logger.workspace = true
 ini_file.workspace = true
+page_bitmap.workspace = true
 semihosting.workspace = true
 uefi_guids.workspace = true

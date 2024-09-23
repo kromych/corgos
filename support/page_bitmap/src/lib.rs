@@ -31,7 +31,9 @@
 //! bitmaps, and fast bit-searching (in progress). The coarsest
 //! levels are stored first in hopes to be cache-friendly.
 
-#![no_std]
+#![cfg_attr(not(test), no_std)]
+
+mod tests;
 
 fn cttz(_byte: u8) -> u8 {
     // TODO: the instrinsics are unstable, asm or bit twiddling for starters.

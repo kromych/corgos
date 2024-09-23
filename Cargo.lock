@@ -51,6 +51,7 @@ dependencies = [
  "elf",
  "ini_file",
  "log",
+ "page_bitmap",
  "raw-cpuid",
  "semihosting",
  "uefi",
