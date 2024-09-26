@@ -33,6 +33,10 @@
 
 #![cfg_attr(not(test), no_std)]
 
+const PAGE_BITMAP_LEVEL_NUMBER: usize = 8;
+const MAX_MEMORY_SUPPORTED_BYTES: usize = 64 << 30;
+const BLOCK_SIZE: usize = 4096;
+
 mod tests;
 
 fn cttz(_byte: u8) -> u8 {
@@ -46,7 +50,39 @@ fn cttz(_byte: u8) -> u8 {
 /// 8 hierarchical levels to cover up to 64 GiB of memory with
 /// 4 KiB pages.
 pub struct PageBitmap<'a> {
-    levels: [&'a mut [u8]; 8],
+    levels: [&'a mut [u8]; PAGE_BITMAP_LEVEL_NUMBER],
+}
+
+pub const fn page_bitmap_level_size(max_memory: usize) -> [usize; PAGE_BITMAP_LEVEL_NUMBER] {
+    const fn align_to_8(n: usize) -> usize {
+        (n + 7) & !7
+    }
+
+    assert!(
+        max_memory <= MAX_MEMORY_SUPPORTED_BYTES,
+        "Can't support that much memory"
+    );
+    assert!(max_memory != 0, "Can't support a system without memory");
+    assert!(
+        (max_memory & (BLOCK_SIZE - 1)) == 0,
+        "Memory size must have a whole number of 4096 byte blocks"
+    );
+
+    let mut bitmap_size = [0; PAGE_BITMAP_LEVEL_NUMBER];
+
+    let mut i = 0;
+    let mut size = max_memory / BLOCK_SIZE;
+    while i < PAGE_BITMAP_LEVEL_NUMBER {
+        if size <= 8 {
+            bitmap_size[i] = 1;
+            break;
+        }
+        bitmap_size[i] = align_to_8(size) / 8;
+        size /= 8;
+        i += 1;
+    }
+
+    bitmap_size
 }
 
 impl<'a> PageBitmap<'a> {
@@ -54,21 +90,17 @@ impl<'a> PageBitmap<'a> {
     /// The higher levels come first for cache-friendliness.
     /// TODO: should check each level sizes.
     /// TODO: if the RAM size is more than 64 GiB, return an error.
-    pub fn new(
-        level_7: &'a mut [u8],
-        level_6: &'a mut [u8],
-        level_5: &'a mut [u8],
-        level_4: &'a mut [u8],
-        level_3: &'a mut [u8],
-        level_2: &'a mut [u8],
-        level_1: &'a mut [u8],
-        level_0: &'a mut [u8],
-    ) -> Self {
-        Self {
-            levels: [
-                level_7, level_6, level_5, level_4, level_3, level_2, level_1, level_0,
-            ],
+    pub fn new(levels: [&'a mut [u8]; PAGE_BITMAP_LEVEL_NUMBER], max_memory: usize) -> Self {
+        let bitmap_size = page_bitmap_level_size(max_memory);
+        for (size_idx, level) in levels.iter().enumerate() {
+            if level.len() <= bitmap_size[size_idx] {
+                panic!(
+                    "Level {size_idx} bitmap storage must be at least {} bytes of size",
+                    bitmap_size[size_idx]
+                );
+            }
         }
+        Self { levels }
     }
 
     /// Initializes the bitmap using a closure that reports whether a page is free.
@@ -78,17 +110,17 @@ impl<'a> PageBitmap<'a> {
         F: Fn(usize) -> bool,
     {
         // Iterate over all pages, updating level 0 (the most granular level)
-        for page_number in 0..(self.levels[7].len() * 8) {
+        for page_number in 0..(self.levels[PAGE_BITMAP_LEVEL_NUMBER - 1].len() * 8) {
             let byte_index = page_number / 8;
             let bit_index = page_number % 8;
 
             // Check if the page is free using the closure
             if is_page_free(page_number) {
                 // Mark page as free (bit unset)
-                self.levels[7][byte_index] &= !(1 << bit_index);
+                self.levels[PAGE_BITMAP_LEVEL_NUMBER - 1][byte_index] &= !(1 << bit_index);
             } else {
                 // Mark page as allocated (bit set)
-                self.levels[7][byte_index] |= 1 << bit_index;
+                self.levels[PAGE_BITMAP_LEVEL_NUMBER - 1][byte_index] |= 1 << bit_index;
             }
         }
 
@@ -96,7 +128,7 @@ impl<'a> PageBitmap<'a> {
     }
 
     fn update_all_levels(&mut self) {
-        for page_number in 0..(self.levels[7].len() * 8) {
+        for page_number in 0..(self.levels[PAGE_BITMAP_LEVEL_NUMBER - 1].len() * 8) {
             self.update_higher_levels(page_number);
         }
     }
@@ -108,7 +140,7 @@ impl<'a> PageBitmap<'a> {
         let bit_index = page_number % 8;
 
         // Set the bit for the specific page in Level 0
-        self.levels[7][byte_index] |= 1 << bit_index;
+        self.levels[PAGE_BITMAP_LEVEL_NUMBER - 1][byte_index] |= 1 << bit_index;
 
         // Update all levels
         self.update_higher_levels(page_number);
@@ -121,7 +153,7 @@ impl<'a> PageBitmap<'a> {
         let bit_index = page_number % 8;
 
         // Clear the bit for the specific page in Level 0
-        self.levels[7][byte_index] &= !(1 << bit_index);
+        self.levels[PAGE_BITMAP_LEVEL_NUMBER - 1][byte_index] &= !(1 << bit_index);
 
         // Update all levels
         self.update_higher_levels(page_number);
@@ -131,12 +163,12 @@ impl<'a> PageBitmap<'a> {
     pub fn is_page_allocated(&self, page_number: usize) -> bool {
         let byte_index = page_number / 8;
         let bit_index = page_number % 8;
-        (self.levels[7][byte_index] & (1 << bit_index)) != 0
+        (self.levels[PAGE_BITMAP_LEVEL_NUMBER - 1][byte_index] & (1 << bit_index)) != 0
     }
 
     fn update_higher_levels(&mut self, page_number: usize) {
         let mut current_page = page_number;
-        for level in (0..7).rev() {
+        for level in (0..PAGE_BITMAP_LEVEL_NUMBER - 1).rev() {
             let group_index = current_page / 8;
             self.update_level(level, group_index);
             current_page /= 8;
@@ -174,7 +206,7 @@ impl<'a> PageBitmap<'a> {
         let mut current_group = 0;
 
         // Traverse levels from the highest (more coarse) down to the lowest
-        for level in 0..7 {
+        for level in 0..PAGE_BITMAP_LEVEL_NUMBER - 1 {
             let mut found = false;
             for (byte_index, &byte) in self.levels[level].iter().enumerate() {
                 if byte != 0xFF {
