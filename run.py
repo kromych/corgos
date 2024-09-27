@@ -66,7 +66,7 @@ def copy_files(arch, release):
     build_type = "release" if release else "debug"
     loader_build_dir = f"{PWD}/target/{arch}-unknown-uefi/{build_type}"
     kernel_build_dir = f"{PWD}/target/{arch}-unknown-linux-gnu/{build_type}"
-    
+
     shutil.copy(config["ovmf_code"], OVMF_DIR)
     shutil.copy(config["ovmf_vars"], OVMF_DIR)
     shutil.copy(f"{loader_build_dir}/boot_loader.efi", f"{EFI_DIR}/efi/boot/{config['boot_efi']}")
@@ -119,10 +119,12 @@ def build_project(arch, release):
     logger.info(f"Building project for {arch}, release: {release}")
     try:
         release_flag = "--release" if release else ""
-        subprocess.run(f"cargo build {release_flag}".split() + 
-                       ["--target", f"{arch}-unknown-uefi", "-p", "boot_loader", "--features", "boot_loader/all_uefi_table_guids"], check=True)
-        subprocess.run(f"cargo build {release_flag}".split() + 
-                       ["--target", f"{arch}-unknown-linux-gnu", "-p", "kernel_start"], check=True)
+        subprocess.run(f"cargo build {release_flag}".split() +
+                       ["--target", f"{arch}-unknown-uefi", "-p", "boot_loader",
+                        "--features", "boot_loader/all_uefi_table_guids"], check=True)
+        subprocess.run(f"cargo build {release_flag}".split() +
+                       ["--target", f"{arch}-unknown-linux-gnu", "-p", "kernel_start",
+                        "--features", "kernel_build"], check=True)
     except subprocess.CalledProcessError as e:
         logger.error(f"Build failed for {arch}: {e}")
         raise
@@ -131,7 +133,7 @@ def build_project(arch, release):
 def run_qemu(arch, accel, release):
     logger.info(f"Running QEMU for {arch}, release: {release}")
     config = ARCH_CONFIG[arch]
-    
+
     setup_directories()
     copy_files(arch, release)
     write_boot_ini(arch)
@@ -140,7 +142,7 @@ def run_qemu(arch, accel, release):
     semihosting = "" if accel else config['semihosting']
     accel_option = get_accelerator(arch, accel)
     qemu_command = f"""
-        qemu-system-{arch} 
+        qemu-system-{arch}
             -nodefaults -s
             -machine {config['machine']}
             {accel_option}

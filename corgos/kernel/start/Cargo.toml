@@ -3,3 +3,6 @@ name = "kernel_start"
 version = "0.0.0"
 authors = ["kromych"]
 edition = "2021"
+
+[features]
+kernel_build = []

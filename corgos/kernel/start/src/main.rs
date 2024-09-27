@@ -5,12 +5,24 @@ mod image_layout;
 
 #[no_mangle]
 pub extern "C" fn kernel_start() -> ! {
-    loop {}
+    todo!("Kernel stub");
 }
 
-#[panic_handler]
+#[no_mangle]
+extern "C" fn rust_eh_personality() {
+    core::hint::spin_loop();
+}
+
+#[no_mangle]
+extern "C" fn rust_eh_unwind_resume(_: &i8) {
+    core::hint::spin_loop();
+}
+
+#[cfg_attr(feature = "kernel_build", panic_handler)]
+#[cfg_attr(not(feature = "kernel_build"), allow(unused))]
 fn panic_handler(_pi: &core::panic::PanicInfo<'_>) -> ! {
-    loop {}
+    core::hint::spin_loop();
+    unsafe { core::hint::unreachable_unchecked() }
 }
 
 #[cfg(target_arch = "aarch64")]
