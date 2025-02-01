@@ -17,7 +17,7 @@ sudo dnf install clang llvm clang-tools lld qemu-system
 ### macOS
 
 ```bash
-brew install llvm qemu
+brew install llvm lld qemu
 ```
 
 ## Cloning the repo
