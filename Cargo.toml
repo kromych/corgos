@@ -11,15 +11,18 @@ members = [
   "support/uefi_guids"
 ]
 
+# Has support for the aarch64 UEFI target
+rust-version = "1.84.1"
+
 [workspace.dependencies]
 acpi = { version = "5.0", default-features = false }
-bitfield-struct = { version = "0.8", default-features = false }
+bitfield-struct = { version = "0.10", default-features = false }
 conquer-once = { version = "0.4", default-features = false }
 elf = { version = "0.7", default-features = false }
 log = { version = "0.4", default-features = false }
 raw-cpuid = { version = "11", default-features = false }
 spinning_top = "0.3"
-uefi = { version = "0.32", default-features = false }
+uefi = { version = "0.33", default-features = false }
 
 ini_file = { path = "support/ini_file" }
 boot_loader = { path = "corgos/boot/loader" }

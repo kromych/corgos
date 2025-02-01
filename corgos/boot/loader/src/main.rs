@@ -15,6 +15,7 @@ use uefi::boot;
 use uefi::boot::AllocateType;
 use uefi::mem::memory_map::MemoryMap;
 use uefi::mem::memory_map::MemoryMapMut;
+use uefi::mem::memory_map::MemoryType;
 use uefi::proto::console::text::Input;
 use uefi::proto::media::file::File;
 use uefi::proto::media::file::FileAttribute;
@@ -22,9 +23,8 @@ use uefi::proto::media::file::FileInfo;
 use uefi::proto::media::file::FileMode;
 use uefi::proto::media::fs::SimpleFileSystem;
 use uefi::runtime;
+use uefi::runtime::ResetType;
 use uefi::system;
-use uefi::table::boot::MemoryType;
-use uefi::table::runtime::ResetType;
 use uefi::CStr16;
 use uefi::Status;
 
