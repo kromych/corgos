@@ -99,9 +99,11 @@ pub fn collapse_8bit_and(x: u64) -> u8 {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[repr(i64)]
 pub enum PageBitmapError {
-    PageIsNotAllocated,
-    OutOfMemory,
+    OutOfMemory = -1,
+    PageIsReserved = -2,
+    PageIsNotAllocated = -3,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -250,7 +252,8 @@ pub struct PageBitmap<const N: usize = PAGE_BITMAP_LEVEL_NUMBER> {
 
     signature4: u64,
     // Using u64 to ensure 8-byte alignment, the higher levels come first for cache-friendliness.
-    bitmap: *mut u64,
+    alloc_bitmap: *mut u64,
+    reserved_bitmap: *mut u64,
 
     signature5: u64,
     level_start: [usize; N],
@@ -267,7 +270,7 @@ impl<const N: usize> PageBitmap<N> {
     /// available memory ranges, must be RAM, not ROM, MMIO, etc.
     fn build<F>(
         bitmap_size: usize,
-        bitmap_storage: *mut u64,
+        storage: [*mut u64; 2],
         max_memory: usize,
         available_ram_map_iter: F,
     ) -> Self
@@ -278,6 +281,9 @@ impl<const N: usize> PageBitmap<N> {
             page_bitmap_size::<N>(max_memory) == bitmap_size,
             "Invalid bitmap size"
         );
+
+        let alloc_bitmap = storage[0];
+        let reserved_bitmap = storage[1];
 
         // Calculate the start of each level
 
@@ -308,7 +314,8 @@ impl<const N: usize> PageBitmap<N> {
             signature6: PAGE_BITMAP_SIGNATURE6,
             levels_number: N,
             max_memory,
-            bitmap: bitmap_storage,
+            alloc_bitmap,
+            reserved_bitmap,
             bitmap_size,
             level_start,
             level_size,
@@ -382,6 +389,15 @@ impl<const N: usize> PageBitmap<N> {
                 }
             }
         }
+
+        // Copy the alloc_bitmap to the reserved_bitmap
+        unsafe {
+            core::ptr::copy_nonoverlapping(
+                self.alloc_bitmap,
+                self.reserved_bitmap,
+                self.bitmap_size / 8,
+            );
+        }
     }
 
     pub unsafe fn from_ptr<'a>(
@@ -400,8 +416,10 @@ impl<const N: usize> PageBitmap<N> {
             && page_bitmap_size::<N>(maybe_page_bitmap.max_memory) == maybe_page_bitmap.bitmap_size
             && maybe_page_bitmap.level_start[0] == 0
         {
-            maybe_page_bitmap.bitmap =
-                (maybe_page_bitmap.bitmap as usize + relocation.amount()) as *mut u64;
+            maybe_page_bitmap.alloc_bitmap =
+                (maybe_page_bitmap.alloc_bitmap as usize + relocation.amount()) as *mut u64;
+            maybe_page_bitmap.reserved_bitmap =
+                (maybe_page_bitmap.reserved_bitmap as usize + relocation.amount()) as *mut u64;
             Some(maybe_page_bitmap)
         } else {
             None
@@ -439,14 +457,14 @@ impl<const N: usize> PageBitmap<N> {
         let level_start = self.level_start[level];
         let level_size = self.level_size[level];
 
-        unsafe { core::slice::from_raw_parts(self.bitmap.add(level_start), level_size) }
+        unsafe { core::slice::from_raw_parts(self.alloc_bitmap.add(level_start), level_size) }
     }
 
     fn level_map_mut(&mut self, level: usize) -> &mut [u64] {
         let level_start = self.level_start[level];
         let level_size = self.level_size[level];
 
-        unsafe { core::slice::from_raw_parts_mut(self.bitmap.add(level_start), level_size) }
+        unsafe { core::slice::from_raw_parts_mut(self.alloc_bitmap.add(level_start), level_size) }
     }
 
     fn is_block_free(&self, level: usize, block_index: usize) -> bool {
@@ -460,6 +478,16 @@ impl<const N: usize> PageBitmap<N> {
     /// Check if a page is allocated
     pub fn is_page_free(&self, pfn: PageFrameNumber) -> bool {
         self.is_block_free(0, pfn.pfn())
+    }
+
+    /// Check if a page is reserved
+    pub fn is_page_reserved(&self, pfn: PageFrameNumber) -> bool {
+        let block_index = pfn.pfn();
+        let bitmap_index = block_index / 64;
+        let bit_offset = block_index % 64;
+        let block = unsafe { *self.reserved_bitmap.add(bitmap_index) };
+
+        block & (1 << bit_offset) != 0
     }
 
     /// Find a free page
@@ -546,6 +574,10 @@ impl<const N: usize> PageBitmap<N> {
     /// Allocate a page
     pub fn allocate_page(&mut self) -> Result<PageFrameNumber, PageBitmapError> {
         if let Some(p) = self.find_free_page() {
+            if self.is_page_reserved(p) {
+                return Err(PageBitmapError::PageIsReserved);
+            }
+
             self.mark_page_as_allocated(p);
             self.available_pages -= 1;
 
@@ -561,6 +593,9 @@ impl<const N: usize> PageBitmap<N> {
     pub fn free_page(&mut self, page: PageFrameNumber) -> Result<(), PageBitmapError> {
         if self.is_page_free(page) {
             return Err(PageBitmapError::PageIsNotAllocated);
+        }
+        if self.is_page_reserved(page) {
+            return Err(PageBitmapError::PageIsReserved);
         }
 
         self.mark_page_as_free(page);
@@ -615,12 +650,12 @@ pub type DefaultPageBitmap = PageBitmap<PAGE_BITMAP_LEVEL_NUMBER>;
 impl DefaultPageBitmap {
     pub fn new(
         max_memory: usize,
-        bitmap_storage: *mut u64,
+        storage: [*mut u64; 2],
         available_ram_map_iter: impl FnMut() -> Option<PageRange>,
     ) -> Self {
         PageBitmap::build(
             page_bitmap_size::<PAGE_BITMAP_LEVEL_NUMBER>(max_memory),
-            bitmap_storage,
+            storage,
             max_memory,
             available_ram_map_iter,
         )
