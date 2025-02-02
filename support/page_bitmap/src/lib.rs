@@ -490,39 +490,64 @@ impl<const N: usize> PageBitmap<N> {
     }
 
     /// TODO: remove pub after testing
-    pub fn mark_all_levels(&mut self, block_index_0: usize, value: bool) {
-        for level in 0..N {
-            let bitmap_index = block_index_0 / 64;
-            let bit_offset = block_index_0 % 64;
+    pub fn mark_all_levels(&mut self, pfn: PageFrameNumber, allocated: bool) {
+        enum BlockState {
+            Full,
+            NotFull,
+        }
 
-            let chunk = unsafe {
-                self.bitmap
-                    .add(self.level_start[level] + bitmap_index)
-                    .read()
-            };
+        // At the leaf level, the block is a page, mark it as requested
 
-            let new_chunk = if value {
-                chunk | (1 << bit_offset)
+        let mut block_state;
+        let mut block_index = pfn.pfn();
+
+        let level_map = self.level_map_mut(0);
+        let bitmap_index = block_index / 64;
+        let bit_offset = block_index % 64;
+
+        let block = &mut level_map[bitmap_index];
+        if allocated {
+            *block |= 1 << bit_offset;
+        } else {
+            *block &= !(1 << bit_offset);
+        }
+        if *block == !0 {
+            block_state = BlockState::Full;
+        } else {
+            block_state = BlockState::NotFull;
+        }
+
+        // Propagate the change to the upper levels
+
+        for level in 1..N {
+            block_index /= 8;
+
+            let level_map = self.level_map_mut(level);
+            let bitmap_index = block_index / 64;
+            let bit_offset = block_index % 64;
+            let block = &mut level_map[bitmap_index];
+
+            match block_state {
+                BlockState::Full => *block |= 1 << bit_offset,
+                BlockState::NotFull => *block &= !(1 << bit_offset),
+            }
+
+            if *block == !0 {
+                block_state = BlockState::Full;
             } else {
-                chunk & !(1 << bit_offset)
-            };
-
-            unsafe {
-                self.bitmap
-                    .add(self.level_start[level] + bitmap_index)
-                    .write(new_chunk);
+                block_state = BlockState::NotFull;
             }
         }
     }
 
     /// TODO: remove pub after testing
     pub fn mark_page_as_allocated(&mut self, pfn: PageFrameNumber) {
-        self.mark_all_levels(pfn.pfn(), true);
+        self.mark_all_levels(pfn, true);
     }
 
     /// TODO: remove pub after testing
     pub fn mark_page_as_free(&mut self, pfn: PageFrameNumber) {
-        self.mark_all_levels(pfn.pfn(), false);
+        self.mark_all_levels(pfn, false);
     }
 
     /// Allocate a page
