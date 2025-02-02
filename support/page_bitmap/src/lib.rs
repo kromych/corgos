@@ -46,6 +46,7 @@
 #![cfg_attr(not(test), no_std)]
 
 use core::num::NonZero;
+use zerocopy::IntoBytes;
 
 mod tests;
 
@@ -68,6 +69,33 @@ const fn align_to(n: usize, align_to: usize) -> usize {
 
 const fn block_size_for_level(level: usize) -> usize {
     BLOCK_SIZE * (1 << (3 * level))
+}
+
+/// For each of the 8 bytes if that byte is 0b1111_1111 then the corresponding bit
+/// in the result is set to 1, otherwise it is set to 0 (i.e. bitwise AND for the bits
+/// of each byte). The result is a byte where each bit corresponds to a byte in the input.
+pub fn collapse_8bit_and(x: u64) -> u8 {
+    // This function is branchless in hopes to be more performant
+    let nx = !x;
+
+    // Use the "has-zero-byte" bit twiddling in parallel for each byte
+    let tmp = nx.wrapping_sub(0x0101010101010101) & !nx & 0x8080808080808080;
+
+    // Shift each byte right by 7 so that each byte now contains either 0 or 1
+    let bits = tmp >> 7;
+
+    // Extract the bits from each byte and combine them into a single byte.
+    // Probably can figure out a constant for doing that with multiplication?
+    let b0 = (bits >> 0) & 1;
+    let b1 = ((bits >> 8) & 1) << 1;
+    let b2 = ((bits >> 16) & 1) << 2;
+    let b3 = ((bits >> 24) & 1) << 3;
+    let b4 = ((bits >> 32) & 1) << 4;
+    let b5 = ((bits >> 40) & 1) << 5;
+    let b6 = ((bits >> 48) & 1) << 6;
+    let b7 = ((bits >> 56) & 1) << 7;
+
+    (b0 | b1 | b2 | b3 | b4 | b5 | b6 | b7) as u8
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -421,17 +449,12 @@ impl<const N: usize> PageBitmap<N> {
         unsafe { core::slice::from_raw_parts_mut(self.bitmap.add(level_start), level_size) }
     }
 
-    /// TODO: remove pub after testing
-    pub fn is_block_free(&self, level: usize, block_index: usize) -> bool {
+    fn is_block_free(&self, level: usize, block_index: usize) -> bool {
         let bitmap_index = block_index / 64;
         let bit_offset = block_index % 64;
+        let block = self.level_map(level)[bitmap_index];
 
-        let chunk = unsafe {
-            self.bitmap
-                .add(self.level_start[level] + bitmap_index)
-                .read()
-        };
-        chunk & (1 << bit_offset) == 0
+        block & (1 << bit_offset) == 0
     }
 
     /// Check if a page is allocated
@@ -439,8 +462,8 @@ impl<const N: usize> PageBitmap<N> {
         self.is_block_free(0, pfn.pfn())
     }
 
-    /// TODO: remove pub after testing
-    pub fn find_free_page(&self) -> Option<PageFrameNumber> {
+    /// Find a free page
+    fn find_free_page(&self) -> Option<PageFrameNumber> {
         // Find the most coarse-grained block that leads a free page
         let mut free_block_bit_index = {
             let level_map = self.level_map(N - 1);
@@ -479,16 +502,10 @@ impl<const N: usize> PageBitmap<N> {
         Some(PageFrameNumber(free_block_bit_index))
     }
 
-    /// TODO: remove pub after testing
-    pub fn mark_all_levels(&mut self, pfn: PageFrameNumber, allocated: bool) {
-        enum BlockState {
-            Full,
-            NotFull,
-        }
-
+    /// Mark a block as allocated or free at all levels for a given page
+    fn mark_all_levels(&mut self, pfn: PageFrameNumber, allocated: bool) {
         // At the leaf level, the block is a page, mark it as requested
 
-        let mut block_state;
         let mut block_index = pfn.pfn();
 
         let level_map = self.level_map_mut(0);
@@ -501,42 +518,28 @@ impl<const N: usize> PageBitmap<N> {
         } else {
             *block &= !(1 << bit_offset);
         }
-        if *block == !0 {
-            block_state = BlockState::Full;
-        } else {
-            block_state = BlockState::NotFull;
-        }
+        let mut compressed = collapse_8bit_and(*block);
 
         // Propagate the change to the upper levels
-
         for level in 1..N {
             block_index /= 8;
 
             let level_map = self.level_map_mut(level);
             let bitmap_index = block_index / 64;
             let bit_offset = block_index % 64;
-            let block = &mut level_map[bitmap_index];
+            let bytes = &mut level_map[bitmap_index].as_mut_bytes();
+            let byte_index = bit_offset / 8;
+            bytes[byte_index] = compressed;
 
-            match block_state {
-                BlockState::Full => *block |= 1 << bit_offset,
-                BlockState::NotFull => *block &= !(1 << bit_offset),
-            }
-
-            if *block == !0 {
-                block_state = BlockState::Full;
-            } else {
-                block_state = BlockState::NotFull;
-            }
+            compressed = collapse_8bit_and(level_map[bitmap_index]);
         }
     }
 
-    /// TODO: remove pub after testing
-    pub fn mark_page_as_allocated(&mut self, pfn: PageFrameNumber) {
+    fn mark_page_as_allocated(&mut self, pfn: PageFrameNumber) {
         self.mark_all_levels(pfn, true);
     }
 
-    /// TODO: remove pub after testing
-    pub fn mark_page_as_free(&mut self, pfn: PageFrameNumber) {
+    fn mark_page_as_free(&mut self, pfn: PageFrameNumber) {
         self.mark_all_levels(pfn, false);
     }
 
@@ -568,6 +571,7 @@ impl<const N: usize> PageBitmap<N> {
         Ok(())
     }
 
+    /// Dump the bitmap to a writer
     pub fn dump(&self, writer: &mut impl core::fmt::Write) {
         writer
             .write_fmt(format_args!(

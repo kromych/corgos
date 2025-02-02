@@ -78,13 +78,16 @@ fn test_alloc_777() {
 
     {
         let available_pages = [
+            PageRange::new(PageFrameNumber(0), NonZero::new(1).unwrap()),
+            PageRange::new(PageFrameNumber(63), NonZero::new(2).unwrap()),
             PageRange::new(PageFrameNumber(91), NonZero::new(4).unwrap()),
             PageRange::new(PageFrameNumber(97), NonZero::new(7).unwrap()),
             PageRange::new(PageFrameNumber(125), NonZero::new(17).unwrap()),
             PageRange::new(PageFrameNumber(193), NonZero::new(177).unwrap()),
         ];
         let non_available_pages = [
-            PageRange::new(PageFrameNumber(0), NonZero::new(91).unwrap()),
+            PageRange::new(PageFrameNumber(1), NonZero::new(62).unwrap()),
+            PageRange::new(PageFrameNumber(65), NonZero::new(26).unwrap()),
             PageRange::new(PageFrameNumber(95), NonZero::new(2).unwrap()),
             PageRange::new(PageFrameNumber(104), NonZero::new(21).unwrap()),
             PageRange::new(PageFrameNumber(142), NonZero::new(51).unwrap()),

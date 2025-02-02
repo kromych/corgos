@@ -3,3 +3,6 @@ name = "page_bitmap"
 version = "0.0.0"
 authors = ["kromych"]
 edition = "2021"
+
+[dependencies]
+zerocopy = "0.8"
