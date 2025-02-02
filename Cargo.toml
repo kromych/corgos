@@ -11,9 +11,6 @@ members = [
   "support/uefi_guids"
 ]
 
-# Has support for the aarch64 UEFI target
-rust-version = "1.84.1"
-
 [workspace.dependencies]
 acpi = { version = "5.0", default-features = false }
 bitfield-struct = { version = "0.10", default-features = false }
