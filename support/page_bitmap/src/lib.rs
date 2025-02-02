@@ -237,11 +237,11 @@ impl<const N: usize> PageBitmap<N> {
     /// to track `max_memory` bytes.
     /// The `available_ram_map_iter` "iterator" provides data on the
     /// available memory ranges, must be RAM, not ROM, MMIO, etc.
-    pub fn new<F>(
+    fn build<F>(
         bitmap_size: usize,
         bitmap_storage: *mut u64,
         max_memory: usize,
-        mut available_ram_map_iter: F,
+        available_ram_map_iter: F,
     ) -> Self
     where
         F: FnMut() -> Option<PageRange>,
@@ -251,18 +251,11 @@ impl<const N: usize> PageBitmap<N> {
             "Invalid bitmap size"
         );
 
-        // First mark all memory as non-available/busy
-        {
-            let bitmap_storage =
-                unsafe { core::slice::from_raw_parts_mut(bitmap_storage, bitmap_size) };
-            bitmap_storage.fill(!0);
-        }
-
         // Calculate the start of each level
 
         let mut level_start = [0; N];
         let mut current_level_start = 0;
-        let level_size = page_bitmap_level_size::<N>(max_memory);
+        let mut level_size = page_bitmap_level_size::<N>(max_memory);
         for level in 0..N {
             let size = level_size[level];
             assert!(size != 0, "Level {level} size is 0");
@@ -271,74 +264,13 @@ impl<const N: usize> PageBitmap<N> {
                 "Level {level} size of {size} is not a multiple of 8",
             );
 
-            level_start[level] = current_level_start;
+            level_start[level] = current_level_start / 8;
+            level_size[level] = size / 8;
             current_level_start += size;
         }
         assert!(level_start[0] == 0, "Level 0 start is not 0");
 
-        // Initialize the page bitmap using the caller-provided iterator,
-        let mut available_pages = 0;
-        {
-            while let Some(range) = available_ram_map_iter() {
-                assert!(
-                    range.end_phys_address() <= max_memory,
-                    "memory range out of bounds"
-                );
-
-                available_pages += range.page_count.get();
-
-                let mut start_bit = range.start_phys_address() / BLOCK_SIZE;
-                let mut end_bit = range.end_phys_address() / BLOCK_SIZE;
-                for level in 0..N {
-                    let level_map = unsafe {
-                        core::slice::from_raw_parts_mut(
-                            bitmap_storage.add(level_start[level]),
-                            level_size[level] / core::mem::size_of::<u64>(),
-                        )
-                    };
-
-                    let start = start_bit / 64;
-                    let end = end_bit / 64;
-
-                    if start == end {
-                        // Need to update bits within one u64
-
-                        let mask = ((1 << (end_bit - start_bit)) - 1) << (start_bit % 64);
-                        level_map[start] &= !mask;
-                    } else {
-                        // Bulk clear the bits by setting the whole u64's to 0
-
-                        let aligned_start_bit = align_to(start_bit, 64);
-                        let aligned_end_bit = end_bit & !(64 - 1);
-
-                        let aligned_start = aligned_start_bit / 64;
-                        let aligned_end = aligned_end_bit / 64;
-
-                        level_map[aligned_start..aligned_end].fill(0);
-
-                        // Set the remaining bits using masks
-
-                        if aligned_start_bit != start_bit {
-                            let start_mask = (1 << (start_bit % 64)) - 1;
-                            level_map[start] &= start_mask;
-                        }
-
-                        if aligned_end_bit != end_bit {
-                            let end_mask = !((1 << (end_bit % 64)) - 1);
-                            level_map[end] &= end_mask;
-                        }
-                    }
-
-                    start_bit /= 8;
-                    end_bit /= 8;
-                    if end_bit == start_bit {
-                        end_bit = start_bit + 1;
-                    }
-                }
-            }
-        }
-
-        Self {
+        let mut page_bitmap = Self {
             signature0: PAGE_BITMAP_SIGNATURE0,
             signature1: PAGE_BITMAP_SIGNATURE1,
             signature2: PAGE_BITMAP_SIGNATURE2,
@@ -352,7 +284,75 @@ impl<const N: usize> PageBitmap<N> {
             bitmap_size,
             level_start,
             level_size,
-            available_pages,
+            available_pages: 0,
+        };
+
+        page_bitmap.init(available_ram_map_iter);
+
+        page_bitmap
+    }
+
+    fn init<F>(&mut self, mut available_ram_map_iter: F)
+    where
+        F: FnMut() -> Option<PageRange>,
+    {
+        // Initialize the bitmap to all 1's, meaning all memory is non-available/busy
+        for level in 0..N {
+            let level_map = self.level_map_mut(level);
+            level_map.fill(!0);
+        }
+
+        while let Some(range) = available_ram_map_iter() {
+            assert!(
+                range.end_phys_address() <= self.max_memory,
+                "memory range out of bounds"
+            );
+
+            self.available_pages += range.page_count.get();
+
+            let mut start_bit = range.start_phys_address() / BLOCK_SIZE;
+            let mut end_bit = range.end_phys_address() / BLOCK_SIZE;
+            for level in 0..N {
+                let level_map = self.level_map_mut(level);
+
+                let start = start_bit / 64;
+                let end = end_bit / 64;
+
+                if start == end {
+                    // Need to update bits within one u64
+
+                    let mask = ((1 << (end_bit - start_bit)) - 1) << (start_bit % 64);
+                    level_map[start] &= !mask;
+                } else {
+                    // Bulk clear the bits by setting the whole u64's to 0
+
+                    let aligned_start_bit = align_to(start_bit, 64);
+                    let aligned_end_bit = end_bit & !(64 - 1);
+
+                    let aligned_start = aligned_start_bit / 64;
+                    let aligned_end = aligned_end_bit / 64;
+
+                    level_map[aligned_start..aligned_end].fill(0);
+
+                    // Set the remaining bits using masks
+
+                    if aligned_start_bit != start_bit {
+                        let start_mask = (1 << (start_bit % 64)) - 1;
+                        level_map[start] &= start_mask;
+                    }
+
+                    if aligned_end_bit != end_bit {
+                        let end_mask = !((1 << (end_bit % 64)) - 1);
+                        level_map[end] &= end_mask;
+                    }
+                }
+
+                start_bit /= 8;
+                end_bit /= 8;
+                if end_bit == start_bit {
+                    end_bit = start_bit + 1;
+                }
+            }
         }
     }
 
@@ -411,24 +411,14 @@ impl<const N: usize> PageBitmap<N> {
         let level_start = self.level_start[level];
         let level_size = self.level_size[level];
 
-        unsafe {
-            core::slice::from_raw_parts(
-                self.bitmap.add(level_start),
-                level_size / core::mem::size_of::<u64>(),
-            )
-        }
+        unsafe { core::slice::from_raw_parts(self.bitmap.add(level_start), level_size) }
     }
 
     fn level_map_mut(&mut self, level: usize) -> &mut [u64] {
         let level_start = self.level_start[level];
         let level_size = self.level_size[level];
 
-        unsafe {
-            core::slice::from_raw_parts_mut(
-                self.bitmap.add(level_start),
-                level_size / core::mem::size_of::<u64>(),
-            )
-        }
+        unsafe { core::slice::from_raw_parts_mut(self.bitmap.add(level_start), level_size) }
     }
 
     /// TODO: remove pub after testing
@@ -586,23 +576,15 @@ impl<const N: usize> PageBitmap<N> {
             ))
             .ok();
         for level in 0..N {
-            let level_map = {
-                let level_start = self.level_start[level];
-                let level_size = self.level_size[level];
+            let level_start = self.level_start[level];
+            let level_size = self.level_size[level];
+            writer
+                .write_fmt(format_args!(
+                    ">>> Level {level}, starts @ {level_start}, size {level_size}\n"
+                ))
+                .ok();
 
-                writer
-                    .write_fmt(format_args!(
-                        ">>> Level {level}, starts @ {level_start}, size {level_size}\n"
-                    ))
-                    .ok();
-                unsafe {
-                    core::slice::from_raw_parts(
-                        self.bitmap.add(level_start),
-                        level_size / core::mem::size_of::<u64>(),
-                    )
-                }
-            };
-
+            let level_map = self.level_map(level);
             for (idx, block) in level_map.iter().enumerate() {
                 writer
                     .write_fmt(format_args!(
@@ -627,12 +609,12 @@ impl<const N: usize> PageBitmap<N> {
 pub type DefaultPageBitmap = PageBitmap<PAGE_BITMAP_LEVEL_NUMBER>;
 
 impl DefaultPageBitmap {
-    pub fn get(
+    pub fn new(
         max_memory: usize,
         bitmap_storage: *mut u64,
         available_ram_map_iter: impl FnMut() -> Option<PageRange>,
     ) -> Self {
-        PageBitmap::new(
+        PageBitmap::build(
             page_bitmap_size::<PAGE_BITMAP_LEVEL_NUMBER>(max_memory),
             bitmap_storage,
             max_memory,

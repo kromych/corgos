@@ -47,12 +47,11 @@ fn test_alloc_4096() {
     let bitmap_size = DefaultPageBitmap::bitmap_storage_size(max_memory);
 
     {
-        let mut bitmap_storage = vec![0u64; bitmap_size / 8];
-        let mut bitmap =
-            DefaultPageBitmap::new(bitmap_size, bitmap_storage.as_mut_ptr(), max_memory, || {
-                // No free pages
-                None
-            });
+        let mut bitmap_storage = vec![0xaaaaaaaaaaaaaaaau64; bitmap_size / 8];
+        let mut bitmap = DefaultPageBitmap::new(max_memory, bitmap_storage.as_mut_ptr(), || {
+            // No free pages
+            None
+        });
         bitmap.dump_to_stdout();
         assert!(bitmap.available_pages() == 0);
         assert!(bitmap.allocate_page() == Err(PageBitmapError::OutOfMemory));
@@ -62,7 +61,7 @@ fn test_alloc_4096() {
         let available_pages = [PageRange::new(PageFrameNumber(0), NonZero::new(1).unwrap())];
         let mut available_pages_iter = available_pages.into_iter();
         let mut bitmap_storage = vec![0u64; bitmap_size / 8];
-        let mut bitmap = DefaultPageBitmap::get(max_memory, bitmap_storage.as_mut_ptr(), || {
+        let mut bitmap = DefaultPageBitmap::new(max_memory, bitmap_storage.as_mut_ptr(), || {
             available_pages_iter.next()
         });
         bitmap.dump_to_stdout();
@@ -98,7 +97,7 @@ fn test_alloc_777() {
 
         let mut available_pages_iter = available_pages.clone().into_iter();
         let mut bitmap_storage = vec![0u64; bitmap_size / 8];
-        let mut bitmap = DefaultPageBitmap::get(max_memory, bitmap_storage.as_mut_ptr(), || {
+        let mut bitmap = DefaultPageBitmap::new(max_memory, bitmap_storage.as_mut_ptr(), || {
             available_pages_iter.next()
         });
         bitmap.dump_to_stdout();
