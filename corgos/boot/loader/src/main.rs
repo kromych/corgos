@@ -8,9 +8,13 @@ mod aarch64_regs;
 use boot_logger::BootLoaderConfig;
 use boot_logger::LogDevice;
 use core::arch::asm;
+use core::num::NonZero;
 use elf::endian::LittleEndian;
 use elf::ElfBytes;
 use log::LevelFilter;
+use page_bitmap::DefaultPageBitmap;
+use page_bitmap::PageFrameNumber;
+use page_bitmap::PageRange;
 use uefi::boot;
 use uefi::boot::AllocateType;
 use uefi::mem::memory_map::MemoryMap;
@@ -27,6 +31,12 @@ use uefi::runtime::ResetType;
 use uefi::system;
 use uefi::CStr16;
 use uefi::Status;
+
+const CORGOS_MAX_MEMORY_BYTES: usize = 64 << 30; // 64 GiB
+const RESERVED_FOR_OS_LOADER_MEMORY_TYPE: u32 = 0x8000_0000;
+const CORGOS_KERNEL_IMAGE_MEMORY_TYPE: u32 = RESERVED_FOR_OS_LOADER_MEMORY_TYPE;
+const CORGOS_MEMORY_MAP_MEMORY_TYPE: u32 = RESERVED_FOR_OS_LOADER_MEMORY_TYPE + 1;
+const CORGOS_PAGE_BITMAP_MEMORY_TYPE: u32 = RESERVED_FOR_OS_LOADER_MEMORY_TYPE + 2;
 
 /// The name of the configuration file in the ESP partition alongside the loader.
 #[cfg(target_arch = "x86_64")]
@@ -481,7 +491,7 @@ fn load_kernel_from_elf() {
 
     let loaded_data = boot::allocate_pages(
         AllocateType::AnyPages,
-        MemoryType::LOADER_DATA, // TODO: Set some special memory type
+        MemoryType::custom(CORGOS_KERNEL_IMAGE_MEMORY_TYPE),
         (loaded_size / 0x1000) as usize,
     )
     .expect("Failed to allocate pages")
@@ -519,8 +529,6 @@ fn load_kernel_from_elf() {
     }
 
     log::info!("Kernel entry point: {:#016x}", elf.ehdr.e_entry);
-
-    todo!("Map the kernel code and data approriately");
 }
 
 #[cfg_attr(target_os = "uefi", panic_handler)]
@@ -615,12 +623,63 @@ fn main() -> Status {
 
     load_kernel_from_elf();
 
-    let mut memory_map = unsafe { boot::exit_boot_services(MemoryType(0x70000000)) };
+    // Allocate space for the page bitmap before exiting boot services
+    let bitmap_size = page_bitmap::DefaultPageBitmap::bitmap_storage_size(CORGOS_MAX_MEMORY_BYTES);
+    let alloc_bitmap = boot::allocate_pages(
+        AllocateType::AnyPages,
+        MemoryType::custom(CORGOS_PAGE_BITMAP_MEMORY_TYPE),
+        (bitmap_size + 0xFFF) / 0x1000,
+    )
+    .expect("Failed to allocate pages for the page bitmap")
+    .as_ptr() as *mut u64;
+    let reserved_bitmap = boot::allocate_pages(
+        AllocateType::AnyPages,
+        MemoryType::RESERVED,
+        (bitmap_size + 0xFFF) / 0x1000,
+    )
+    .expect("Failed to allocate pages for the page bitmap")
+    .as_ptr() as *mut u64;
+
+    let mut memory_map =
+        unsafe { boot::exit_boot_services(MemoryType::custom(CORGOS_MEMORY_MAP_MEMORY_TYPE)) };
     memory_map.sort();
     log::info!("Memory map has {} entries", memory_map.entries().len());
+    let mut total_memory = 0;
+    let mut available_memory = 0;
     for entry in memory_map.entries() {
-        log::info!("Memory map: {entry:x?}")
+        log::info!("Memory map: {entry:x?}");
+        total_memory += entry.page_count * 4096;
+        if entry.ty == MemoryType::CONVENTIONAL {
+            available_memory += entry.page_count * 4096;
+        }
     }
+    log::info!(
+        "Total memory: {} bytes, available memory: {} bytes",
+        total_memory,
+        available_memory
+    );
 
-    todo!("Transfer to the kernel");
+    log::info!(
+        "Page bitmap size: {} bytes, {} pages",
+        bitmap_size,
+        bitmap_size / 4096
+    );
+    let mut memmap_iter = memory_map.entries().map(|entry| {
+        PageRange::new(
+            PageFrameNumber::new(entry.phys_start as usize / 4096),
+            NonZero::new(entry.page_count as usize).unwrap(),
+        )
+    });
+    let page_bitmap = DefaultPageBitmap::new(
+        CORGOS_MAX_MEMORY_BYTES,
+        [alloc_bitmap, reserved_bitmap],
+        || memmap_iter.next(),
+    );
+    log::info!(
+        "Page bitmap tracks {} available pages",
+        page_bitmap.available_pages()
+    );
+
+    todo!("Map the kernel code and data approriately");
+    // todo!("Transfer to the kernel");
 }
