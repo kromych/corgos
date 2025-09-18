@@ -1,6 +1,5 @@
 	.file	"start-x86_64.S"
-	.weak _DYNAMIC
-	.hidden _DYNAMIC
+	.extern _DYNAMIC
 
 	.section ".bss.page_tables", "aw", @nobits
     .global _page_tables_start
