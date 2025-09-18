@@ -640,8 +640,9 @@ fn main() -> Status {
     .expect("Failed to allocate pages for the page bitmap")
     .as_ptr() as *mut u64;
 
-    let mut memory_map =
-        unsafe { boot::exit_boot_services(MemoryType::custom(CORGOS_MEMORY_MAP_MEMORY_TYPE)) };
+    let mut memory_map = unsafe {
+        boot::exit_boot_services(Some(MemoryType::custom(CORGOS_MEMORY_MAP_MEMORY_TYPE)))
+    };
     memory_map.sort();
     log::info!("Memory map has {} entries", memory_map.entries().len());
     let mut total_memory = 0;
