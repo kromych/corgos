@@ -86,7 +86,7 @@ pub fn collapse_8bit_and(x: u64) -> u8 {
 
     // Extract the bits from each byte and combine them into a single byte.
     // Probably can figure out a constant for doing that with multiplication?
-    let b0 = (bits >> 0) & 1;
+    let b0 = bits & 1;
     let b1 = ((bits >> 8) & 1) << 1;
     let b2 = ((bits >> 16) & 1) << 2;
     let b3 = ((bits >> 24) & 1) << 3;
@@ -400,6 +400,10 @@ impl<const N: usize> PageBitmap<N> {
         }
     }
 
+    /// Reinterprets the pointer as the bitmap.
+    ///
+    /// # Safety
+    /// TODO
     pub unsafe fn from_ptr<'a>(
         ptr: *mut u64,
         relocation: PageBitmapRelocation,
@@ -428,9 +432,11 @@ impl<const N: usize> PageBitmap<N> {
 
     /// Convert the bitmap to a pointer, useful for passing to from the bootloader
     /// to the kernel. The poiners inside the bitmap might need to be updated.
+    ///
+    /// # Safety
+    /// TODO
     pub unsafe fn to_ptr(self) -> *const u64 {
-        let ptr = &self as *const Self as *const u64;
-        ptr
+        &self as *const Self as *const u64
     }
 
     /// Maximum memory supported by the bitmap
@@ -508,10 +514,8 @@ impl<const N: usize> PageBitmap<N> {
                 break;
             }
 
-            if free_block_bit_index.is_none() {
-                // No free blocks, out of memory
-                return None;
-            }
+            // No free blocks, out of memory?
+            free_block_bit_index?;
 
             free_block_bit_index.unwrap()
         };
